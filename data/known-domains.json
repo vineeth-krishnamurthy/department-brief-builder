@@ -1,0 +1,8 @@
+{
+  "_comment": "Seed list of domains that reliably carry fire-department facts. Learned domains from lib/cache.ts are appended at runtime.",
+  "surplus_sales": ["govdeals.com", "municibid.com", "publicsurplus.com"],
+  "apparatus_news": ["firehouse.com", "firerescue1.com", "fireapparatusmagazine.com", "firefighternation.com"],
+  "grants": ["usaspending.gov", "fema.gov"],
+  "council_records": ["legistar.com", "granicus.com", "civicplus.com", "municode.com"],
+  "blocked": ["facebook.com", "yelp.com", "mapquest.com", "yellowpages.com", "pinterest.com", "instagram.com", "tiktok.com"]
+}
