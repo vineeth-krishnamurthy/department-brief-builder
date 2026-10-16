@@ -13,14 +13,16 @@ export async function fetchDeptPages(website: string): Promise<Page[]> {
   const home = await fetchPage(website);
   if (!home) return [];
 
-  const base = new URL(website);
+  // Resolve links against where the homepage actually landed after redirects.
+  const base = new URL(home.url);
+  const site = bareHost(base.hostname);
   const links = new Set<string>();
   for (const m of home.html.matchAll(/<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
     const [, href, label] = m;
     if (!INTERESTING.test(href) && !INTERESTING.test(strip(label))) continue;
     try {
       const u = new URL(href, base);
-      if (u.hostname === base.hostname && !/\.(pdf|jpg|png|gif|zip)$/i.test(u.pathname)) links.add(u.href);
+      if (bareHost(u.hostname) === site && !/\.(pdf|jpg|png|gif|zip)$/i.test(u.pathname)) links.add(u.href);
     } catch {}
     if (links.size >= MAX_PAGES) break;
   }
@@ -60,3 +62,6 @@ function strip(html: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/** www.example.org and example.org are the same site. */
+const bareHost = (h: string) => h.toLowerCase().replace(/^www\./, "");
