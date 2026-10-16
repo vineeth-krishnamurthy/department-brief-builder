@@ -3,8 +3,6 @@
 import { useState } from "react";
 import type { Brief, Rejection } from "@/lib/utils/dataTypes";
 
-const SAMPLES = ["ChIJpcN7ecgAyIkRrOcWzZx3Yyc", "ChIJr-yREGP9tEwRr7M-F00PpM8"];
-
 export default function Home() {
   const [placeId, setPlaceId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -63,14 +61,6 @@ export default function Home() {
           {loading ? "Researching…" : "Build brief"}
         </button>
       </form>
-      <p className="mt-2 text-xs text-neutral-500">
-        Try:{" "}
-        {SAMPLES.map((s) => (
-          <button key={s} onClick={() => { setPlaceId(s); run(s); }} className="mr-3 font-mono underline">
-            {s}
-          </button>
-        ))}
-      </p>
 
       {loading && (
         <p className="mt-8 animate-pulse text-sm text-neutral-500">
