@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getVersion, storeConfigured } from "@/lib/storage/briefStore";
+import { getVersion, storeConfigured } from "@/lib/storeBrief/briefStore";
 import { validatePlaceId } from "@/lib/validators/inputValidator";
 
 /** GET /api/stored-briefs/<Place ID>/versions/<version>: one stored brief. */

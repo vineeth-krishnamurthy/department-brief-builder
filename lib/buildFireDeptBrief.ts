@@ -1,10 +1,10 @@
 import known from "@/data/known-domains.json";
 import type { Fact, Place, RegistryEntry, Section } from "./utils/dataTypes";
-import type { Doc } from "./informationFetchers/crawler";
-import { type Apparatus, fleetSummary, REPLACE_AGE, RESERVE_AGE } from "./extractors/apparatusAge";
-import { writeWithClaude, SEARCH_BUDGET, type ClaudeProgress } from "./brief/writeWithClaude";
-import type { SearchProvider } from "./informationFetchers/fetchSearchResults";
-import { buildSources, renderSources, resolveFacts } from "./brief/citations";
+import type { Doc } from "./gatherInformation/crawler";
+import { type Apparatus, fleetSummary, REPLACE_AGE, RESERVE_AGE } from "./utils/apparatusAge";
+import { writeWithClaude, SEARCH_BUDGET, type ClaudeProgress } from "./writeBrief/writeWithClaude";
+import type { SearchProvider } from "./gatherInformation/fetchSearchResults";
+import { buildSources, renderSources, resolveFacts } from "./writeBrief/citations";
 
 export type BriefOutput = { sections: Section[]; why_call_today: string };
 

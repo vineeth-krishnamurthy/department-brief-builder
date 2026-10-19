@@ -1,6 +1,6 @@
 import type { Fact, Section } from "../utils/dataTypes";
-import type { Doc } from "../informationFetchers/crawler";
-import { bareHost } from "../informationFetchers/crawler";
+import type { Doc } from "../gatherInformation/crawler";
+import { bareHost } from "../gatherInformation/crawler";
 
 /**
  * Every piece of gathered material becomes a numbered source. Claude cites a source by ID

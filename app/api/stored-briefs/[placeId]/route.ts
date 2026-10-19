@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listVersions, storeConfigured } from "@/lib/storage/briefStore";
+import { listVersions, storeConfigured } from "@/lib/storeBrief/briefStore";
 import { validatePlaceId } from "@/lib/validators/inputValidator";
 
 /** GET /api/stored-briefs/<Place ID>: the department and every stored version, newest first (without brief bodies). */

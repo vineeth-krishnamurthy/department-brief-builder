@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { DepartmentRow } from "@/lib/storage/briefStore";
+import type { DepartmentRow } from "@/lib/storeBrief/briefStore";
 
 /** Every department with a stored brief, searchable by name or Google Place ID. */
 export default function StoredBriefs() {

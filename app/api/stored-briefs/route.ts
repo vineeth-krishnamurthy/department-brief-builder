@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { searchDepartments, storeConfigured } from "@/lib/storage/briefStore";
+import { searchDepartments, storeConfigured } from "@/lib/storeBrief/briefStore";
 
 /** GET /api/stored-briefs?q=wise%20avenue  or  ?q=<Place ID>. Departments with at least one stored brief. */
 export async function GET(req: Request) {

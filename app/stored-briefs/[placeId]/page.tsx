@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { DepartmentRow, StoredVersion, VersionRow } from "@/lib/storage/briefStore";
+import type { DepartmentRow, StoredVersion, VersionRow } from "@/lib/storeBrief/briefStore";
 import { BriefView } from "../../components/BriefView";
 
 /** One department: every stored version, newest first, with the selected version's brief. */

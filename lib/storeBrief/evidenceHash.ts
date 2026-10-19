@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Evidence } from "../informationFetchers/gatherEvidence";
+import type { Evidence } from "../gatherInformation/gatherEvidence";
 
 /**
  * A fingerprint of everything the fetchers gathered for one department. Two runs with the same

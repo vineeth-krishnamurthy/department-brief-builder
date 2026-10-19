@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Brief, BriefEvent, Place } from "@/lib/utils/dataTypes";
-import type { Step } from "@/lib/brief/progress";
+import type { Step } from "@/lib/utils/progress";
 import { BriefView } from "./components/BriefView";
 import { ProgressPanel } from "./components/ProgressPanel";
 

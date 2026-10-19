@@ -1,5 +1,5 @@
 import { crawl, sitemapUrls, bareHost, type Doc } from "./crawler";
-import { findApparatus } from "../extractors/apparatusAge";
+import { findApparatus } from "../utils/apparatusAge";
 
 /**
  * Crawl the department's website, the parent city or county site when the department lives

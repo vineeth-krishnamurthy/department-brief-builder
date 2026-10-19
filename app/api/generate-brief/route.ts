@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { getPlace } from "@/lib/informationFetchers/fetchGooglePlaceId";
-import { validateFireDepartment, findRegistryEntry, registryDate } from "@/lib/validators/fireDepartmentValidator";
-import { validatePlaceId } from "@/lib/validators/inputValidator";
-import { gatherEvidence } from "@/lib/informationFetchers/gatherEvidence";
+import { validateFireDepartment, findRegistryEntry, registryDate, validatePlaceId } from "@/lib/validators/inputValidator";
+import { getPlace } from "@/lib/gatherInformation/fetchGooglePlaceId";
+import { gatherEvidence } from "@/lib/gatherInformation/gatherEvidence";
 import { buildFireDeptBrief } from "@/lib/buildFireDeptBrief";
-import { MODEL } from "@/lib/brief/writeWithClaude";
-import { evidenceHash } from "@/lib/brief/evidenceHash";
-import { latestVersion, saveVersion, storeConfigured, touchDepartment, type StoredVersion } from "@/lib/storage/briefStore";
+import { MODEL } from "@/lib/writeBrief/writeWithClaude";
+import { evidenceHash } from "@/lib/storeBrief/evidenceHash";
+import { latestVersion, saveVersion, storeConfigured, touchDepartment, type StoredVersion } from "@/lib/storeBrief/briefStore";
 import { acquireSlot, BusyError } from "@/lib/utils/rateLimiter";
-import { Progress } from "@/lib/brief/progress";
+import { Progress } from "@/lib/utils/progress";
 import type { Brief, BriefEvent } from "@/lib/utils/dataTypes";
 
 export const maxDuration = 90; // target is under 60s per brief; headroom so a slow run finishes instead of being cut off

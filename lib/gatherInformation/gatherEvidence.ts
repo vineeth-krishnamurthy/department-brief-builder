@@ -3,9 +3,9 @@ import { fetchDeptPages } from "./fetchDeptWebsites";
 import { nonprofitFacts } from "./fetchNonprofitFinances";
 import { searchResults, type SearchProvider } from "./fetchSearchResults";
 import { meetingDocs } from "./fetchMeetingDocs";
-import { findApparatus, apparatusFacts, type Apparatus } from "../extractors/apparatusAge";
-import { registryFacts } from "../validators/fireDepartmentValidator";
-import type { Progress } from "../brief/progress";
+import { findApparatus, apparatusFacts, type Apparatus } from "../utils/apparatusAge";
+import { registryFacts } from "../validators/inputValidator";
+import type { Progress } from "../utils/progress";
 import type { Doc } from "./crawler";
 import type { Fact, Place, RegistryEntry } from "../utils/dataTypes";
 
