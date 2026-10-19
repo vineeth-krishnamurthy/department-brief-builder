@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Brief, BriefEvent, Place } from "@/lib/utils/dataTypes";
-import type { Step } from "@/lib/utils/progress";
+import type { Step } from "@/lib/brief/progress";
 import { BriefView } from "./components/BriefView";
 import { ProgressPanel } from "./components/ProgressPanel";
 
@@ -26,7 +26,7 @@ export default function Home() {
     setProgress({ pct: 0, steps: [] });
     setLastId(id);
     try {
-      const res = await fetch("/api/brief", {
+      const res = await fetch("/api/generate-brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ placeId: id.trim() }),
@@ -79,7 +79,7 @@ export default function Home() {
           <p className="mt-1 text-sm text-neutral-500">Paste a Google Place ID. Every fact links to where it came from.</p>
         </div>
         <Link
-          href="/briefs"
+          href="/stored-briefs"
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
         >
           View stored briefs
@@ -128,7 +128,7 @@ export default function Home() {
           <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
             <p className="font-medium">No new information, so no new brief was created</p>
             <p className="mt-1">{outcome.message}</p>
-            <Link href={`/briefs/${encodeURIComponent(outcome.brief.place.id)}`} className="mt-2 inline-block text-xs font-medium underline">
+            <Link href={`/stored-briefs/${encodeURIComponent(outcome.brief.place.id)}`} className="mt-2 inline-block text-xs font-medium underline">
               See every version for this department
             </Link>
           </div>
@@ -141,7 +141,7 @@ export default function Home() {
           {storage?.status === "new" && (
             <p className="mt-6 text-xs text-neutral-500">
               Saved as version {storage.version}.{" "}
-              <Link href={`/briefs/${encodeURIComponent(outcome.brief.place.id)}`} className="underline">
+              <Link href={`/stored-briefs/${encodeURIComponent(outcome.brief.place.id)}`} className="underline">
                 See every version
               </Link>
             </p>

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { listVersions, storeConfigured } from "@/lib/utils/briefStore";
+import { listVersions, storeConfigured } from "@/lib/storage/briefStore";
 import { validatePlaceId } from "@/lib/validators/inputValidator";
 
-/** GET /api/briefs/<Place ID>: the department and every stored version, newest first (without brief bodies). */
+/** GET /api/stored-briefs/<Place ID>: the department and every stored version, newest first (without brief bodies). */
 export async function GET(_req: Request, { params }: { params: Promise<{ placeId: string }> }) {
   if (!storeConfigured()) return NextResponse.json({ error: "Brief storage is not configured." }, { status: 503 });
   const placeId = validatePlaceId((await params).placeId);

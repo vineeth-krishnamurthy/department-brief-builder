@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { DepartmentRow } from "@/lib/utils/briefStore";
+import type { DepartmentRow } from "@/lib/storage/briefStore";
 
 /** Every department with a stored brief, searchable by name or Google Place ID. */
 export default function StoredBriefs() {
@@ -14,7 +14,7 @@ export default function StoredBriefs() {
     const ctrl = new AbortController();
     const t = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/briefs?q=${encodeURIComponent(q)}`, { signal: ctrl.signal });
+        const res = await fetch(`/api/stored-briefs?q=${encodeURIComponent(q)}`, { signal: ctrl.signal });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Could not load stored briefs.");
         setRows(data.departments);
@@ -47,7 +47,7 @@ export default function StoredBriefs() {
       <ul className="mt-6 divide-y divide-neutral-200 dark:divide-neutral-800">
         {rows?.map((d) => (
           <li key={d.place_id}>
-            <Link href={`/briefs/${encodeURIComponent(d.place_id)}`} className="block py-3 hover:bg-neutral-50 dark:hover:bg-neutral-900">
+            <Link href={`/stored-briefs/${encodeURIComponent(d.place_id)}`} className="block py-3 hover:bg-neutral-50 dark:hover:bg-neutral-900">
               <div className="flex items-baseline justify-between gap-4">
                 <span className="font-medium">{d.name}</span>
                 <span className="shrink-0 text-xs text-neutral-500">

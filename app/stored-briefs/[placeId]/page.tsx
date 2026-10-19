@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { DepartmentRow, StoredVersion, VersionRow } from "@/lib/utils/briefStore";
+import type { DepartmentRow, StoredVersion, VersionRow } from "@/lib/storage/briefStore";
 import { BriefView } from "../../components/BriefView";
 
 /** One department: every stored version, newest first, with the selected version's brief. */
@@ -18,7 +18,7 @@ export default function DepartmentBriefs() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/briefs/${encodeURIComponent(placeId)}`);
+        const res = await fetch(`/api/stored-briefs/${encodeURIComponent(placeId)}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Could not load stored briefs.");
         setDept(data.department);
@@ -35,7 +35,7 @@ export default function DepartmentBriefs() {
     setBrief(null);
     (async () => {
       try {
-        const res = await fetch(`/api/briefs/${encodeURIComponent(placeId)}/${selected}`);
+        const res = await fetch(`/api/stored-briefs/${encodeURIComponent(placeId)}/versions/${selected}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Could not load the brief.");
         setBrief(data);
@@ -47,7 +47,7 @@ export default function DepartmentBriefs() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
-      <Link href="/briefs" className="text-sm text-neutral-500 underline">← All stored briefs</Link>
+      <Link href="/stored-briefs" className="text-sm text-neutral-500 underline">← All stored briefs</Link>
       {error && <p className="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-800">{error}</p>}
 
       {dept && (

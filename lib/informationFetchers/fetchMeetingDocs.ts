@@ -1,4 +1,4 @@
-import { pdfText, strip, type Doc } from "../utils/crawler";
+import { pdfText, strip, type Doc } from "./crawler";
 import type { Place } from "../utils/dataTypes";
 
 /**

@@ -1,15 +1,14 @@
-import { grantFacts } from "./informationFetchers/fetchGrants";
-import { fetchDeptPages } from "./informationFetchers/fetchDeptWebsites";
-import { nonprofitFacts } from "./informationFetchers/fetchNonprofitFinances";
-import { searchResults, type SearchProvider } from "./informationFetchers/fetchSearchResults";
-import { surplusFacts } from "./informationFetchers/fetchSurplus";
-import { meetingDocs } from "./informationFetchers/fetchMeetingDocs";
-import { socialLinks, type SocialLink } from "./informationFetchers/fetchSocial";
-import { findApparatus, apparatusFacts, type Apparatus } from "./utils/apparatusAge";
-import { registryFacts } from "./validators/fireDepartmentValidator";
-import type { Progress } from "./utils/progress";
-import type { Doc } from "./utils/crawler";
-import type { Fact, Place, RegistryEntry } from "./utils/dataTypes";
+import { grantFacts } from "./fetchGrants";
+import { fetchDeptPages } from "./fetchDeptWebsites";
+import { nonprofitFacts } from "./fetchNonprofitFinances";
+import { searchResults, type SearchProvider } from "./fetchSearchResults";
+import { meetingDocs } from "./fetchMeetingDocs";
+import { socialLinks, type SocialLink } from "./fetchSocial";
+import { findApparatus, apparatusFacts, type Apparatus } from "../extractors/apparatusAge";
+import { registryFacts } from "../validators/fireDepartmentValidator";
+import type { Progress } from "../brief/progress";
+import type { Doc } from "./crawler";
+import type { Fact, Place, RegistryEntry } from "../utils/dataTypes";
 
 /** Everything the deterministic layer found for one department, before Claude sees it. */
 export type Evidence = {
@@ -19,7 +18,6 @@ export type Evidence = {
   grants: Fact[] | null;
   nonprofit: Fact[] | null;
   search: { provider: SearchProvider; urls: string[] } | null; // null = no search provider could run
-  surplus: Fact[] | null;
   pages: Doc[];
   meetings: Doc[] | null;
   apparatus: Apparatus[];
@@ -34,7 +32,7 @@ const count = (v: unknown[] | null, one: string, many = `${one}s`) =>
 export async function gatherEvidence(place: Place, registry: RegistryEntry | null, progress: Progress): Promise<Evidence> {
   const website = place.website || registry?.website || "";
   // Web search first: its results seed the crawl and the council-records check. The grant,
-  // 990, and surplus lookups run alongside it.
+  // and 990 lookups run alongside it.
   const searched = progress.track("search", searchResults(place).catch(() => null), (v) =>
     v === null ? { status: "failed", detail: "no search provider" } : { detail: `${v.results.length} results (${v.provider === "serper" ? "Google via Serper" : "Claude web search"})` },
   );
@@ -49,10 +47,9 @@ export async function gatherEvidence(place: Place, registry: RegistryEntry | nul
     return { search: found ? { provider: found.provider, urls } : null, pages };
   })();
 
-  const [grants, nonprofit, surplus, { search, pages }, meetings] = await Promise.all([
+  const [grants, nonprofit, { search, pages }, meetings] = await Promise.all([
     progress.track("grants", grantFacts(place).catch(() => null), (v) => count(v, "award")),
     progress.track("nonprofit", nonprofitFacts(place).catch(() => null), (v) => (v === null ? count(v, "") : { detail: v.length ? "filings found" : "no matching nonprofit" })),
-    progress.track("surplus", surplusFacts(place).catch(() => null), (v) => count(v, "listing")),
     searchThenCrawl,
     searched.then((found) => {
       const hosts = [website, ...(found?.results.map((r) => r.url) ?? [])].flatMap((u) => {
@@ -77,7 +74,6 @@ export async function gatherEvidence(place: Place, registry: RegistryEntry | nul
     ...(grants ?? []),
     ...(nonprofit ?? []),
     ...apparatusFacts(apparatus),
-    ...(surplus ?? []),
   ];
-  return { place, registry, website, grants, nonprofit, search, surplus, pages, meetings, apparatus, social, knownFacts };
+  return { place, registry, website, grants, nonprofit, search, pages, meetings, apparatus, social, knownFacts };
 }

@@ -1,4 +1,4 @@
-import type { Step } from "@/lib/utils/progress";
+import type { Step } from "@/lib/brief/progress";
 
 const ICON: Record<Step["status"], string> = { pending: "○", running: "◐", done: "✓", failed: "✕", skipped: "–" };
 const TONE: Record<Step["status"], string> = {

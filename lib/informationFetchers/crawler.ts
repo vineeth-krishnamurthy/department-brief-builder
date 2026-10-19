@@ -20,8 +20,9 @@ export type Doc = {
 const SOCIAL = /^https?:\/\/(?:www\.|m\.)?(facebook|instagram|twitter|x|youtube)\.com\//i;
 
 export type CrawlOptions = {
-  starts: (string | { url: string; depth: number })[]; // a start can begin deeper to limit how far it is followed
+  starts: (string | { url: string; depth: number; score?: number })[]; // a start can begin deeper to limit how far it is followed
   keywords: RegExp; // links are followed when URL or link text match
+  priority?: (url: string, linkText: string) => number; // higher is fetched sooner; links scoring 0 are still followed if keywords match
   deadlineMs?: number; // total wall-clock budget (default 8000)
   maxDocs?: number; // default 20
   maxPdfs?: number; // default 4
@@ -40,22 +41,32 @@ export async function crawl(opts: CrawlOptions): Promise<Doc[]> {
   const deadline = Date.now() + (opts.deadlineMs ?? 8000);
   const maxDocs = opts.maxDocs ?? 20, maxPdfs = opts.maxPdfs ?? 4, maxDepth = opts.maxDepth ?? 2;
   const maxChars = opts.maxCharsPerDoc ?? 8000, maxPdfBytes = opts.maxPdfBytes ?? 4 * 1024 * 1024;
+  const rank = opts.priority ?? (() => 0);
 
-  const starts = opts.starts.map((s) => (typeof s === "string" ? { url: s, depth: 0 } : s));
+  type Item = { url: string; depth: number; score: number };
+  const starts: Item[] = opts.starts.map((s) => (typeof s === "string" ? { url: s, depth: 0, score: 100 } : { ...s, score: s.score ?? 100 }));
   const sites = new Set(starts.map((s) => safeHost(s.url)).filter(Boolean));
   const seen = new Set<string>();
   const docs: Doc[] = [];
   let pdfs = 0;
-  let frontier = starts;
+  let frontier: Item[] = starts;
 
+  // Best-first: each round fetches the highest-scoring unseen URLs, so a "Request for Bids" link
+  // is read before a "Cemetery Commission" link even if it appears later on the page.
   while (frontier.length && docs.length < maxDocs && Date.now() < deadline) {
-    const batch = frontier.filter((f) => !seen.has(norm(f.url))).slice(0, 8);
-    batch.forEach((f) => seen.add(norm(f.url)));
-    frontier = frontier.slice(batch.length);
+    frontier = frontier.filter((f) => !seen.has(norm(f.url))).sort((a, b) => b.score - a.score || a.depth - b.depth);
+    const batch: Item[] = [];
+    while (frontier.length && batch.length < 10) {
+      const next = frontier.shift()!;
+      if (seen.has(norm(next.url))) continue;
+      seen.add(norm(next.url));
+      batch.push(next);
+    }
+    if (!batch.length) break;
 
     const results = await Promise.all(batch.map((f) => fetchDoc(f.url, f.depth, { deadline, maxChars, maxPdfBytes, allowPdf: pdfs < maxPdfs })));
     for (const r of results) {
-      if (!r) continue;
+      if (!r || docs.length >= maxDocs) continue;
       // Different links can redirect to the same page; keep it once.
       if (docs.some((d) => norm(d.url) === norm(r.doc.url))) continue;
       seen.add(norm(r.doc.url));
@@ -65,11 +76,54 @@ export async function crawl(opts: CrawlOptions): Promise<Doc[]> {
       if (r.doc.depth >= maxDepth) continue;
       for (const { href, text } of r.links) {
         if (seen.has(norm(href)) || !sites.has(safeHost(href)) || SKIP_EXT.test(href)) continue;
-        if (opts.keywords.test(href) || opts.keywords.test(text)) frontier.push({ url: href, depth: r.doc.depth + 1 });
+        const score = rank(href, text);
+        if (score > 0 || opts.keywords.test(href) || opts.keywords.test(text)) frontier.push({ url: href, depth: r.doc.depth + 1, score });
       }
     }
   }
   return docs;
+}
+
+/**
+ * Every page URL a site lists in its sitemaps: /sitemap.xml, /sitemap_index.xml, /wp-sitemap.xml,
+ * and any Sitemap: lines in robots.txt, following sitemap indexes a level down. Pages that no link
+ * reaches any more (an old notice pushed off the first page of a list) are usually still here.
+ */
+export async function sitemapUrls(origin: string, deadline: number, limit = 3000): Promise<string[]> {
+  const host = safeHost(origin);
+  const get = async (url: string) => {
+    const budget = Math.min(4000, deadline - Date.now());
+    if (budget < 300) return "";
+    try {
+      const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(budget), redirect: "follow" });
+      return res.ok ? await res.text() : "";
+    } catch {
+      return "";
+    }
+  };
+  const robots = await get(`${origin}/robots.txt`);
+  const listed = [...robots.matchAll(/^\s*sitemap:\s*(\S+)/gim)].map((m) => m[1]);
+  const candidates = [...new Set([...listed, `${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`, `${origin}/wp-sitemap.xml`])];
+
+  const pages = new Set<string>();
+  const readSitemap = async (url: string, depth: number): Promise<void> => {
+    const xml = await get(url);
+    if (!xml.includes("<loc>")) return;
+    const locs = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)].map((m) => m[1].replace(/&amp;/g, "&"));
+    if (/<sitemapindex/i.test(xml)) {
+      if (depth > 0) return;
+      // Prefer child sitemaps for pages and posts over images, products, and tags.
+      const children = locs.sort((a, b) => Number(/page|post|notice|news/i.test(b)) - Number(/page|post|notice|news/i.test(a))).slice(0, 6);
+      await Promise.all(children.map((c) => readSitemap(c, depth + 1)));
+      return;
+    }
+    for (const l of locs) if (safeHost(l) === host && pages.size < limit) pages.add(l);
+  };
+  for (const c of candidates) {
+    await readSitemap(c, 0);
+    if (pages.size) break; // the first sitemap that works is enough
+  }
+  return [...pages];
 }
 
 type Fetched = { doc: Doc; links: { href: string; text: string }[] } | null;

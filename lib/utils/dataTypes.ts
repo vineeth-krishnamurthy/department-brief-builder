@@ -1,4 +1,4 @@
-import type { ProgressEvent } from "./progress";
+import type { ProgressEvent } from "../brief/progress";
 
 export type Place = {
   id: string;

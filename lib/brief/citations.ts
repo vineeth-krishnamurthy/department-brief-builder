@@ -1,13 +1,13 @@
-import type { Fact, Section } from "./utils/dataTypes";
-import type { Doc } from "./utils/crawler";
-import { bareHost } from "./utils/crawler";
+import type { Fact, Section } from "../utils/dataTypes";
+import type { Doc } from "../informationFetchers/crawler";
+import { bareHost } from "../informationFetchers/crawler";
 
 /**
  * Every piece of gathered material becomes a numbered source. Claude cites a source by ID
  * and copies a quote; the server fills in the link, type, and date from what the fetcher
  * recorded, and keeps a quote only if it really appears in the text we fetched.
  *
- * Source IDs: R = structured record (registry, grants, 990, apparatus line, surplus listing),
+ * Source IDs: R = structured record (registry, grants, 990, apparatus line),
  * D = crawled document.
  */
 export type Source = {

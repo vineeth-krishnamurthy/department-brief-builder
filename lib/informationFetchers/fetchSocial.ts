@@ -1,4 +1,4 @@
-import type { Doc } from "../utils/crawler";
+import type { Doc } from "./crawler";
 
 /**
  * The department's social pages, discovered from links on its own website.

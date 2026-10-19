@@ -1,4 +1,4 @@
-import type { Fact } from "./dataTypes";
+import type { Fact } from "../utils/dataTypes";
 
 /**
  * Apparatus age flags per NFPA 1911 guidance: units over 15 years old belong in reserve,

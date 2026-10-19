@@ -1,5 +1,5 @@
 import { PostgrestClient } from "@supabase/postgrest-js";
-import type { Brief, Place, RegistryEntry } from "./dataTypes";
+import type { Brief, Place, RegistryEntry } from "../utils/dataTypes";
 
 /**
  * Every brief for a valid fire department, stored by version in Supabase Postgres.

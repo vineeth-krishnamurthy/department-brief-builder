@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import known from "@/data/known-domains.json";
-import type { RawSection, WebEvidence } from "../citations";
+import type { RawSection, WebEvidence } from "./citations";
 
 export const MODEL = process.env.BRIEF_MODEL ?? "claude-sonnet-5-5";
 const EXPECTED_CHARS = 6000; // rough size of a finished brief, for the progress bar
@@ -43,7 +43,7 @@ export type ClaudeOutput = { sections: RawSection[]; why_call_today: string; web
  */
 export const SEARCH_BUDGET = { searches: 3, fetches: 3 };
 
-export async function fetchFromClaude(system: string, user: string, allowSearch: boolean, onProgress?: ClaudeProgress): Promise<ClaudeOutput> {
+export async function writeWithClaude(system: string, user: string, allowSearch: boolean, onProgress?: ClaudeProgress): Promise<ClaudeOutput> {
   const params: Anthropic.MessageCreateParamsNonStreaming = {
     model: MODEL,
     max_tokens: 6000,

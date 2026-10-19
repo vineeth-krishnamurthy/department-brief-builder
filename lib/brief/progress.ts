@@ -13,7 +13,6 @@ const STEPS = [
   { id: "grants", label: "Federal grants (FEMA, USAspending)", weight: 5 },
   { id: "nonprofit", label: "IRS 990 filings", weight: 3 },
   { id: "search", label: "Web search for the department", weight: 6 },
-  { id: "surplus", label: "Surplus marketplace listings", weight: 3 },
   { id: "site", label: "Crawl the department website and search results", weight: 14 },
   { id: "meetings", label: "Council and board records", weight: 7 },
   { id: "compare", label: "Compare with stored briefs", weight: 3 },

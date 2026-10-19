@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { searchDepartments, storeConfigured } from "@/lib/utils/briefStore";
+import { searchDepartments, storeConfigured } from "@/lib/storage/briefStore";
 
-/** GET /api/briefs?q=wise%20avenue  or  ?q=<Place ID>. Departments with at least one stored brief. */
+/** GET /api/stored-briefs?q=wise%20avenue  or  ?q=<Place ID>. Departments with at least one stored brief. */
 export async function GET(req: Request) {
   if (!storeConfigured()) return NextResponse.json({ error: "Brief storage is not configured." }, { status: 503 });
   const q = new URL(req.url).searchParams.get("q")?.slice(0, 200) ?? "";

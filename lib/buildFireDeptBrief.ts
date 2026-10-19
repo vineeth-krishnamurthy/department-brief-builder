@@ -1,25 +1,24 @@
 import known from "@/data/known-domains.json";
 import type { Fact, Place, RegistryEntry, Section } from "./utils/dataTypes";
-import type { Doc } from "./utils/crawler";
+import type { Doc } from "./informationFetchers/crawler";
 import type { SocialLink } from "./informationFetchers/fetchSocial";
-import { type Apparatus, fleetSummary, REPLACE_AGE, RESERVE_AGE } from "./utils/apparatusAge";
-import { fetchFromClaude, SEARCH_BUDGET, type ClaudeProgress } from "./informationFetchers/fetchFromClaude";
+import { type Apparatus, fleetSummary, REPLACE_AGE, RESERVE_AGE } from "./extractors/apparatusAge";
+import { writeWithClaude, SEARCH_BUDGET, type ClaudeProgress } from "./brief/writeWithClaude";
 import type { SearchProvider } from "./informationFetchers/fetchSearchResults";
-import { buildSources, renderSources, resolveFacts } from "./citations";
+import { buildSources, renderSources, resolveFacts } from "./brief/citations";
 
 export type BriefOutput = { sections: Section[]; why_call_today: string };
 
 export type ResearchInput = {
   place: Place;
   registry: RegistryEntry | null;
-  knownFacts: Fact[]; // everything already sourced: registry, grants, 990, apparatus, surplus
+  knownFacts: Fact[]; // everything already sourced: registry, grants, 990, apparatus
   grants: Fact[] | null; // null = both grant lookups failed, [] = checked and found nothing
   nonprofit: Fact[] | null; // IRS 990 finances; null = lookup failed, [] = no matching nonprofit
   search: { provider: SearchProvider; urls: string[] } | null; // first-page search results that seeded the crawl
   website: string; // the site we tried to crawl ("" = none known)
   pages: Doc[]; // department and parent-government documents
   meetings: Doc[] | null; // council/board records; null = no platform found
-  surplus: Fact[] | null; // marketplace listings; null = lookups failed
   apparatus: Apparatus[]; // dated units found in any document
   social: SocialLink[];
 };
@@ -54,6 +53,7 @@ Rules:
   - "Leadership": who runs the department. The chief and deputy chiefs; for volunteer companies also the president or board; for fire districts the commissioners. Include when they took the role if known. Prefer the most recent source when sources disagree.
   - "Funding & Grants": grants, budgets, levies or bonds, capital or apparatus funding, and nonprofit finances.
   Do not pad either one. If you cannot source anything, return it with "facts": [].
+- Bid requests, sealed-bid notices, "for sale" or surplus listings, and auctions of the department's or town's vehicles are the most important signal for Garage: the department is already trying to sell. Put each under "Fleet" as separate facts, each with its own quote: one for the vehicle being sold, one for the bid deadline, one for the minimum bid or price if stated. Lead "why_call_today" with it.
 - "Fleet": vehicles and apparatus only. List every dated unit from the structured records, keeping their NFPA 1911 age notes verbatim (over ${RESERVE_AGE} years: reserve; over ${REPLACE_AGE} years: replace). Add any other apparatus the documents describe, plus purchases, deliveries, and surplus sales of vehicles.
 - "Recent News": dated events only (announcements, incidents, council actions, stories) with the date in the fact.
 - "Miscellaneous": everything else worth knowing about the department itself: type and FDID, station count, staffing, call volume, coverage area and population, ISO rating, history. Never put these under Fleet or Recent News.
@@ -83,7 +83,7 @@ Omit "Fleet", "Recent News", or "Miscellaneous" if they have no facts.`;
     .filter((l): l is string => typeof l === "string")
     .join("\n");
 
-  const out = await fetchFromClaude(system, user, missing.length > 0, onProgress);
+  const out = await writeWithClaude(system, user, missing.length > 0, onProgress);
   const { sections, droppedFacts } = resolveFacts(out.sections, sources, out.web);
   for (const d of droppedFacts) console.warn(`citations: dropped (${d.reason}) [${d.source_id}] ${d.text}${d.quote ? ` | quote: "${d.quote}"` : ""}`);
   return { why_call_today: out.why_call_today, sections: withRequiredSections(sections, input) };
@@ -143,7 +143,7 @@ function searchNote({ search }: ResearchInput) {
  * Summarize what the deterministic layer already covered, so Claude doesn't repeat it,
  * and work out which required items are still empty.
  */
-export function coverage({ registry, grants, nonprofit, search, website, pages, meetings, surplus, apparatus, social }: ResearchInput): { checked: string[]; missing: string[] } {
+export function coverage({ registry, grants, nonprofit, search, website, pages, meetings, apparatus, social }: ResearchInput): { checked: string[]; missing: string[] } {
   const checked: string[] = [];
   const host = website ? safeHost(website) : "";
   const n = (k: number, w: string) => `${k} ${w}${k === 1 ? "" : "s"}`;
@@ -170,9 +170,6 @@ export function coverage({ registry, grants, nonprofit, search, website, pages, 
   else if (meetings.length === 0) checked.push("Council/board records: platform found, nothing recent about the fire department.");
   else checked.push(`Council/board records: ${n(meetings.length, "item")} about the fire department, text below.`);
 
-  if (surplus === null) checked.push("Surplus marketplaces (Municibid, PublicSurplus): lookups failed.");
-  else if (surplus.length === 0) checked.push("Surplus marketplaces (Municibid, PublicSurplus): no current listings by this department. GovDeals blocks automated checks.");
-  else checked.push(`Surplus marketplaces: ${n(surplus.length, "listing")} by this department, listed below.`);
 
   checked.push(apparatus.length ? `Apparatus with model years: ${n(apparatus.length, "unit")} found in the documents, with NFPA 1911 age notes, listed below.` : "Apparatus with model years: none found by pattern; read the documents for fleet details.");
 
@@ -183,8 +180,8 @@ export function coverage({ registry, grants, nonprofit, search, website, pages, 
 
   // Cheap keyword checks on what we already have.
   // A chief counts as found only as a capitalized name next to "Chief" (case-sensitive on purpose:
-  // "welcomes new chief" must not count), in documents we gathered for this department.
-  const text = [...pages.map((p) => p.text), ...(meetings ?? []).map((m) => m.text)].join(" ");
+  // "welcomes new chief" must not count), in the documents that actually fit in Claude's prompt.
+  const text = docsInPrompt([...pages, ...(meetings ?? [])]).map((d) => d.text).join(" ");
   const name = "[A-Z][a-z]+(?:\\s+[A-Z]\\.)?\\s+[A-Z][a-zA-Z'-]+";
   const chiefNamed = new RegExp(`\\b(?:Fire\\s+)?Chief:?\\s+${name}|${name},?\\s+(?:Fire\\s+)?Chief\\b`).test(text);
   const missing: string[] = [];
@@ -196,6 +193,18 @@ export function coverage({ registry, grants, nonprofit, search, website, pages, 
     missing.push("fleet: apparatus, vehicle purchases, or surplus sales");
   }
   return { checked, missing };
+}
+
+/** The documents renderSources will include, in the same order and under the same budget. */
+function docsInPrompt(docs: Doc[]): Doc[] {
+  let left = RAW_BUDGET_CHARS;
+  const out: Doc[] = [];
+  for (const d of docs) {
+    if (left < 400) break;
+    out.push({ ...d, text: d.text.slice(0, left) });
+    left -= Math.min(d.text.length, left);
+  }
+  return out;
 }
 
 function safeHost(url: string) {
