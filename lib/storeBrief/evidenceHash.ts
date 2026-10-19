@@ -10,14 +10,20 @@ import type { Evidence } from "../gatherInformation/gatherEvidence";
  * changed copyright year or a reordered menu doesn't count as new information. Duplicate pages
  * reached through different URLs collapse to one fingerprint.
  *
- * Only pages that matter to the brief are fingerprinted (see matters()). The crawl is timed, so on
- * a large city site each run reaches a different mix of council calendars and arts-grant pages;
- * counting those would make every run look new.
+ * Only the starting pages are fingerprinted: the department's website and its parent city or
+ * county site, which come from Google Places or the registry and are read first on every run. A
+ * department with no website uses its official search results (a .gov/.us site or one named for
+ * the town) instead. Pages reached by following links, sitemap pages, and other search results are
+ * left out: the crawl is timed and Google varies its results, so each run reaches a different mix
+ * and every run would look new. News and notices usually appear on a starting page (a home page or
+ * notices list), so new information still changes the hash.
  */
 export function evidenceHash(e: Evidence): string {
-  const docs = [...e.pages.filter((d) => matters(d, e.website)), ...(e.meetings ?? [])];
+  // The crawl starts the department and parent site at depth 0 and official search results at depth 1.
+  const startDepth = e.website ? 0 : 1;
+  const docs = [...e.pages.filter((d) => d.start && d.depth <= startDepth), ...(e.meetings ?? [])];
   const canonical = {
-    v: 4, // bump when the hashing rules change, so old versions aren't wrongly matched
+    v: 5, // bump when the hashing rules change, so old versions aren't wrongly matched
     place: [e.place.name, e.place.address, e.place.phone, e.place.website],
     registry: e.registry,
     grants: e.grants === null ? "failed" : e.grants.map((f) => f.text).sort(),
@@ -26,28 +32,6 @@ export function evidenceHash(e: Evidence): string {
     docs: docFingerprints(docs),
   };
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
-}
-
-/**
- * A page counts toward the hash if it is on the department's own site (a site at its own domain,
- * like wavfc.org, not a page under a city site), or if its address or title is about the fire
- * service or its apparatus.
- */
-// Not "chief", "truck", "auction", or "bids" alone: on a city site those are police chiefs, food trucks,
-// license auctions, and road-work bids.
-const ABOUT_FIRE = /\b(fire|apparatus|fleet|engines?|tankers?|pumpers?|ladders?|surplus)\b/i;
-function matters(d: { url: string; title: string }, website: string): boolean {
-  if (website) {
-    try {
-      const own = new URL(website);
-      if (own.pathname.replace(/\/$/, "") === "" && hostOf(d.url) === hostOf(website)) return true;
-    } catch {}
-  }
-  let path = d.url;
-  try {
-    path = decodeURIComponent(new URL(d.url).pathname);
-  } catch {}
-  return ABOUT_FIRE.test(`${path.replace(/[/_.-]+/g, " ")} ${d.title}`);
 }
 
 const SHINGLE = 8;

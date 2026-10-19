@@ -14,6 +14,7 @@ export type Doc = {
   source_type?: string; // set by fetchers that know better than "website"
   date?: string; // only when the source states it (meeting date, introduction date)
   date_label?: string;
+  start?: boolean; // one of the URLs the crawl started from, not a page reached by a link
 };
 
 
@@ -41,8 +42,8 @@ export async function crawl(opts: CrawlOptions): Promise<Doc[]> {
   const maxChars = opts.maxCharsPerDoc ?? 8000, maxPdfBytes = opts.maxPdfBytes ?? 4 * 1024 * 1024;
   const rank = opts.priority ?? (() => 0);
 
-  type Item = { url: string; depth: number; score: number };
-  const starts: Item[] = opts.starts.map((s) => (typeof s === "string" ? { url: s, depth: 0, score: 100 } : { ...s, score: s.score ?? 100 }));
+  type Item = { url: string; depth: number; score: number; start?: boolean };
+  const starts: Item[] = opts.starts.map((s) => (typeof s === "string" ? { url: s, depth: 0, score: 100, start: true } : { ...s, score: s.score ?? 100, start: true }));
   const sites = new Set(starts.map((s) => safeHost(s.url)).filter(Boolean));
   const seen = new Set<string>();
   const docs: Doc[] = [];
@@ -63,8 +64,9 @@ export async function crawl(opts: CrawlOptions): Promise<Doc[]> {
     if (!batch.length) break;
 
     const results = await Promise.all(batch.map((f) => fetchDoc(f.url, f.depth, { deadline, maxChars, maxPdfBytes, allowPdf: pdfs < maxPdfs })));
-    for (const r of results) {
+    for (const [i, r] of results.entries()) {
       if (!r || docs.length >= maxDocs) continue;
+      if (batch[i].start) r.doc.start = true;
       // Different links can redirect to the same page; keep it once.
       if (docs.some((d) => norm(d.url) === norm(r.doc.url))) continue;
       seen.add(norm(r.doc.url));
