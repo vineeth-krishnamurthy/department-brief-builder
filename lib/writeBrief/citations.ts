@@ -94,7 +94,9 @@ export function resolveFacts(sections: RawSection[], sources: Source[], web: Web
         if (src.kind === "document") {
           if (!quote) return drop("noQuote");
           if (!verified(quote, src.text)) return drop("quoteNotInSource");
-          const q = widenToNumbers(f.text, quote, src.text, `${src.title} ${src.type}`);
+          const also = `${src.title} ${src.type}`;
+          let q = widenToNumbers(fact.text, quote, src.text, also);
+          if (!q) q = widenToNumbers((fact.text = withoutUnquotedDates(f.text, `${quote} ${also}`)), quote, src.text, also);
           if (!q) return drop("numberNotInEvidence");
           fact.quote = q;
           if (src.html) fact.link = withTextFragment(src.url, q);
@@ -115,10 +117,12 @@ export function resolveFacts(sections: RawSection[], sources: Source[], web: Web
         const page = web.texts.get(f.source_url);
         if (!quote) return drop("noQuote");
         if (!page || !verified(quote, page)) return drop("quoteNotInSource");
-        const q = widenToNumbers(f.text, quote, page, "");
+        let text = f.text;
+        let q = widenToNumbers(text, quote, page, "");
+        if (!q) q = widenToNumbers((text = withoutUnquotedDates(f.text, quote)), quote, page, "");
         if (!q) return drop("numberNotInEvidence");
         return [{
-          text: f.text, source_url: f.source_url, source_title: web.urls.get(f.source_url) || safeHost(f.source_url),
+          text, source_url: f.source_url, source_title: web.urls.get(f.source_url) || safeHost(f.source_url),
           source_type: "Web search", quote: q, link: withTextFragment(f.source_url, q),
         }];
       }
@@ -153,6 +157,22 @@ export function widenToNumbers(fact: string, quote: string, text: string, alsoCo
     if (numbersIn(fact, `${span} ${alsoCounts}`)) return span;
   }
   return null;
+}
+
+/**
+ * Claude often stamps a fact with a date from elsewhere on the page, such as the meeting date in a
+ * page heading ("Town Meeting on March 4, 2025 voted $87,070..."), so the quote can't support it.
+ * Remove a full date ("March 4, 2025", with a leading "on" or "as of") whose numbers the evidence lacks; the
+ * rest of the fact must still pass the number check.
+ */
+const MONTH_DATE = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\\.?\\s+\\d{1,2},?\\s+\\d{4}";
+export function withoutUnquotedDates(fact: string, evidence: string): string {
+  const out = fact
+    .replace(new RegExp(`\\s*\\b(?:on|as of|dated|in|from|through)\\s+(${MONTH_DATE}),?|\\b(${MONTH_DATE}),?\\s*`, "gi"), (all, a, b) => (numbersIn(a ?? b, evidence) ? all : a ? "" : " "))
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;])/g, "$1")
+    .trim();
+  return out.charAt(0).toUpperCase() + out.slice(1);
 }
 
 /** Numbers as written ("$67,727", "2025-09-27", "18%") broken into comparable digit runs. */

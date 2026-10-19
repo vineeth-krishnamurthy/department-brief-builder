@@ -15,7 +15,7 @@ A one-page brief an account executive can read right before calling a fire depar
 5. **Flags what matters to Garage.** Vehicles the department is selling (bid notices, surplus listings) lead the brief, and apparatus over 15 or 25 years old is flagged for reserve or replacement.
 6. **Stores every version.** Each brief is saved by department and version. Searching a department again re-checks every source; if nothing changed, the stored brief is shown instead of writing a duplicate. "View stored briefs" lists every department, searchable by name or Place ID, with all its versions.
 
-At most five briefs are built at once; extra requests are asked to try again shortly.
+Rate limited to 5 briefs built at once, extra requests are asked to try again shortly.
 
 ## Stack
 
