@@ -11,13 +11,11 @@ export type Doc = {
   text: string;
   kind: "html" | "pdf";
   depth: number;
-  social?: string[];
   source_type?: string; // set by fetchers that know better than "website"
   date?: string; // only when the source states it (meeting date, introduction date)
   date_label?: string;
 };
 
-const SOCIAL = /^https?:\/\/(?:www\.|m\.)?(facebook|instagram|twitter|x|youtube)\.com\//i;
 
 export type CrawlOptions = {
   starts: (string | { url: string; depth: number; score?: number })[]; // a start can begin deeper to limit how far it is followed
@@ -155,8 +153,7 @@ async function fetchDoc(url: string, depth: number, o: { deadline: number; maxCh
     for (const m of html.matchAll(/<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
       try { links.push({ href: new URL(m[1], finalUrl).href, text: strip(m[2]).slice(0, 120) }); } catch {}
     }
-    const social = [...new Set(links.map((l) => l.href).filter((h) => SOCIAL.test(h)))].slice(0, 10);
-    return { doc: { url: finalUrl, title, text: strip(html).slice(0, o.maxChars), kind: "html", depth, social }, links };
+    return { doc: { url: finalUrl, title, text: strip(html).slice(0, o.maxChars), kind: "html", depth }, links };
   } catch {
     return null;
   }

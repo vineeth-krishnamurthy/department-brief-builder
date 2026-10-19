@@ -1,7 +1,6 @@
 import known from "@/data/known-domains.json";
 import type { Fact, Place, RegistryEntry, Section } from "./utils/dataTypes";
 import type { Doc } from "./informationFetchers/crawler";
-import type { SocialLink } from "./informationFetchers/fetchSocial";
 import { type Apparatus, fleetSummary, REPLACE_AGE, RESERVE_AGE } from "./extractors/apparatusAge";
 import { writeWithClaude, SEARCH_BUDGET, type ClaudeProgress } from "./brief/writeWithClaude";
 import type { SearchProvider } from "./informationFetchers/fetchSearchResults";
@@ -20,7 +19,6 @@ export type ResearchInput = {
   pages: Doc[]; // department and parent-government documents
   meetings: Doc[] | null; // council/board records; null = no platform found
   apparatus: Apparatus[]; // dated units found in any document
-  social: SocialLink[];
 };
 
 const RAW_BUDGET_CHARS = 90_000; // roughly 22k tokens of crawled text
@@ -143,7 +141,7 @@ function searchNote({ search }: ResearchInput) {
  * Summarize what the deterministic layer already covered, so Claude doesn't repeat it,
  * and work out which required items are still empty.
  */
-export function coverage({ registry, grants, nonprofit, search, website, pages, meetings, apparatus, social }: ResearchInput): { checked: string[]; missing: string[] } {
+export function coverage({ registry, grants, nonprofit, search, website, pages, meetings, apparatus }: ResearchInput): { checked: string[]; missing: string[] } {
   const checked: string[] = [];
   const host = website ? safeHost(website) : "";
   const n = (k: number, w: string) => `${k} ${w}${k === 1 ? "" : "s"}`;
@@ -176,7 +174,6 @@ export function coverage({ registry, grants, nonprofit, search, website, pages, 
   if (search === null) checked.push("Web search for the department: unavailable.");
   else checked.push(`Web search for the department: ${n(search.urls.length, "result")} on the first page; their pages were crawled with the site and are included below when they mention the town.`);
 
-  if (social.length) checked.push(`Social pages found (links only, not readable without login): ${social.map((s) => s.network).join(", ")}.`);
 
   // Cheap keyword checks on what we already have.
   // A chief counts as found only as a capitalized name next to "Chief" (case-sensitive on purpose:

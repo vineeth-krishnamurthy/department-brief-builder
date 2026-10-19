@@ -55,7 +55,6 @@ export type Brief = {
   why_call_today: string;
   elapsed_ms: number;
   generated_at: string;
-  social?: { network: string; url: string }[]; // department pages the AE can open (not crawled)
   storage?: BriefStorage; // set on the way out; not part of the stored brief
 };
 

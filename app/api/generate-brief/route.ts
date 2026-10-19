@@ -124,7 +124,7 @@ async function research(placeId: string, progress: Progress): Promise<BriefEvent
   progress.done("claude", `${sections.reduce((n, s) => n + s.facts.length, 0)} facts`);
 
   const brief: Brief = {
-    place, registry, registry_date: registryDate(), sections, why_call_today, social: evidence.social,
+    place, registry, registry_date: registryDate(), sections, why_call_today,
     elapsed_ms: Date.now() - started, generated_at: new Date().toISOString(),
   };
 

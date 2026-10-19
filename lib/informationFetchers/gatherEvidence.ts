@@ -3,7 +3,6 @@ import { fetchDeptPages } from "./fetchDeptWebsites";
 import { nonprofitFacts } from "./fetchNonprofitFinances";
 import { searchResults, type SearchProvider } from "./fetchSearchResults";
 import { meetingDocs } from "./fetchMeetingDocs";
-import { socialLinks, type SocialLink } from "./fetchSocial";
 import { findApparatus, apparatusFacts, type Apparatus } from "../extractors/apparatusAge";
 import { registryFacts } from "../validators/fireDepartmentValidator";
 import type { Progress } from "../brief/progress";
@@ -21,7 +20,6 @@ export type Evidence = {
   pages: Doc[];
   meetings: Doc[] | null;
   apparatus: Apparatus[];
-  social: SocialLink[];
   knownFacts: Fact[];
 };
 
@@ -66,14 +64,11 @@ export async function gatherEvidence(place: Place, registry: RegistryEntry | nul
   ]);
 
   const apparatus = findApparatus([...pages, ...(meetings ?? [])]);
-  // Social links only from the department's own site; search-result pages link to their own accounts.
-  const deptHost = website ? website.replace(/^https?:\/\/(www\.)?/, "").split("/")[0].toLowerCase() : "";
-  const social = socialLinks(pages.filter((p) => !!deptHost && p.url.replace(/^https?:\/\/(www\.)?/, "").toLowerCase().startsWith(deptHost)));
   const knownFacts = [
     ...(registry ? registryFacts(registry) : []),
     ...(grants ?? []),
     ...(nonprofit ?? []),
     ...apparatusFacts(apparatus),
   ];
-  return { place, registry, website, grants, nonprofit, search, pages, meetings, apparatus, social, knownFacts };
+  return { place, registry, website, grants, nonprofit, search, pages, meetings, apparatus, knownFacts };
 }

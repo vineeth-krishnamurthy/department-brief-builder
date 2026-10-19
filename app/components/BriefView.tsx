@@ -16,15 +16,6 @@ export function BriefView({ brief }: { brief: Brief }) {
             </a>
           )}
         </p>
-        {brief.social?.length ? (
-          <p className="mt-1 text-xs text-neutral-500">
-            {brief.social.map((s) => (
-              <a key={s.url} href={s.url} target="_blank" rel="noreferrer" className="mr-3 underline">
-                {s.network}
-              </a>
-            ))}
-          </p>
-        ) : null}
         {registry && (
           <p className="mt-2 text-xs text-neutral-500">
             USFA registry: {registry.dept_type}, {registry.stations} station{registry.stations === "1" ? "" : "s"},{" "}
