@@ -5,7 +5,7 @@ import { gatherEvidence } from "@/lib/gatherInformation/gatherEvidence";
 import { buildFireDeptBrief } from "@/lib/buildFireDeptBrief";
 import { MODEL } from "@/lib/writeBrief/writeWithClaude";
 import { evidenceHash } from "@/lib/storeBrief/evidenceHash";
-import { latestVersion, saveVersion, storeConfigured, touchDepartment, type StoredVersion } from "@/lib/storeBrief/briefStore";
+import { latestVersion, saveVersion, storeConfigured, touchDepartment, versionWithHash, type StoredVersion } from "@/lib/storeBrief/briefStore";
 import { acquireSlot, BusyError } from "@/lib/utils/rateLimiter";
 import { Progress } from "@/lib/utils/progress";
 import type { Brief, BriefEvent } from "@/lib/utils/dataTypes";
@@ -92,24 +92,27 @@ async function research(placeId: string, progress: Progress): Promise<BriefEvent
   // 3. Every deterministic source in parallel.
   const evidence = await gatherEvidence(place, registry, progress);
 
-  // 4. Compare with the latest stored version. Same evidence means a new brief would add nothing.
+  // 4. Compare with every stored version. Evidence already seen means a new brief would add nothing.
   const hash = evidenceHash(evidence);
   let previous: StoredVersion | null = null;
   if (storeConfigured()) {
     progress.start("compare");
-    previous = await latestVersion(place.id).catch((e) => {
+    const failed = (e: Error) => {
       console.error("stored brief lookup failed:", e.message);
       return null;
-    });
-    if (previous && previous.evidence_hash === hash) {
+    };
+    previous = await latestVersion(place.id).catch(failed);
+    const match = previous && previous.evidence_hash === hash ? previous : previous ? await versionWithHash(place.id, hash).catch(failed) : null;
+    if (match) {
       await touchDepartment(place.id).catch(() => {});
-      progress.done("compare", `matches version ${previous.version}`);
+      progress.done("compare", `matches version ${match.version}`);
       progress.skipRemaining("not needed: nothing changed");
-      const when = new Date(previous.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const when = new Date(match.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const since = match.version === previous!.version ? `Nothing new since version ${match.version} on ${when}.` : `Same information as version ${match.version} from ${when}.`;
       return {
         type: "unchanged",
-        message: `Nothing new since version ${previous.version} on ${when}. Every source returned the same information, so a new brief wasn't created. Showing the stored version.`,
-        brief: { ...previous.brief, storage: { status: "unchanged", version: previous.version, saved_at: previous.created_at } },
+        message: `${since} Every source returned the same information, so a new brief wasn't created. Showing that version.`,
+        brief: { ...match.brief, storage: { status: "unchanged", version: match.version, saved_at: match.created_at } },
       };
     }
     progress.done("compare", previous ? `changed since version ${previous.version}` : "first brief for this department");

@@ -44,6 +44,22 @@ export async function latestVersion(placeId: string): Promise<StoredVersion | nu
   return data as StoredVersion | null;
 }
 
+/** The stored version built from exactly this evidence, if any (newest first). */
+export async function versionWithHash(placeId: string, hash: string): Promise<StoredVersion | null> {
+  const c = db();
+  if (!c) return null;
+  const { data, error } = await c
+    .from("brief_versions")
+    .select("version, evidence_hash, brief, created_at")
+    .eq("place_id", placeId)
+    .eq("evidence_hash", hash)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Supabase: ${error.message}`);
+  return data as StoredVersion | null;
+}
+
 /** Record that the department was checked again without new information. */
 export async function touchDepartment(placeId: string): Promise<void> {
   const c = db();

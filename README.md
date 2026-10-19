@@ -41,6 +41,7 @@ Required: `GOOGLE_PLACES_API_KEY`, `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABAS
 - **Facebook pages can't be read.** Many volunteer departments post most of their news there, but Facebook shows no posts without a login, and both open-source scraping libraries tested returned nothing. The routes that would work are Meta's Page Public Content Access API (requires Meta's app review) or a paid scraping service (Meta's terms prohibit it).
 - **Apparatus extraction can mislabel units.** Model years are read from page text by pattern; on table layouts a year can be paired with the wrong unit name.
 - **Coverage depends on what is online.** Small departments with no website and little press get thin briefs; a required section then says "Not found" rather than guessing.
+- **The home page doesn't keep its state.** Leaving it mid-build (e.g. for "View stored briefs") clears the page; the brief still finishes and is saved under stored briefs.
 - **Re-checks ignore pipeline improvements.** If a department's sources are unchanged, it keeps its stored brief even after the brief-writing logic improves.
 
 ## Future features

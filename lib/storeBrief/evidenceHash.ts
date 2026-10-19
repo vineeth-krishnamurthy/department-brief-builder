@@ -9,11 +9,15 @@ import type { Evidence } from "../gatherInformation/gatherEvidence";
  * half the pages of the same site (menus, footers, "recent posts" sidebars) is ignored, so a
  * changed copyright year or a reordered menu doesn't count as new information. Duplicate pages
  * reached through different URLs collapse to one fingerprint.
+ *
+ * Only pages that matter to the brief are fingerprinted (see matters()). The crawl is timed, so on
+ * a large city site each run reaches a different mix of council calendars and arts-grant pages;
+ * counting those would make every run look new.
  */
 export function evidenceHash(e: Evidence): string {
-  const docs = [...e.pages, ...(e.meetings ?? [])];
+  const docs = [...e.pages.filter((d) => matters(d, e.website)), ...(e.meetings ?? [])];
   const canonical = {
-    v: 3, // bump when the hashing rules change, so old versions aren't wrongly matched
+    v: 4, // bump when the hashing rules change, so old versions aren't wrongly matched
     place: [e.place.name, e.place.address, e.place.phone, e.place.website],
     registry: e.registry,
     grants: e.grants === null ? "failed" : e.grants.map((f) => f.text).sort(),
@@ -22,6 +26,28 @@ export function evidenceHash(e: Evidence): string {
     docs: docFingerprints(docs),
   };
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
+/**
+ * A page counts toward the hash if it is on the department's own site (a site at its own domain,
+ * like wavfc.org, not a page under a city site), or if its address or title is about the fire
+ * service or its apparatus.
+ */
+// Not "chief", "truck", "auction", or "bids" alone: on a city site those are police chiefs, food trucks,
+// license auctions, and road-work bids.
+const ABOUT_FIRE = /\b(fire|apparatus|fleet|engines?|tankers?|pumpers?|ladders?|surplus)\b/i;
+function matters(d: { url: string; title: string }, website: string): boolean {
+  if (website) {
+    try {
+      const own = new URL(website);
+      if (own.pathname.replace(/\/$/, "") === "" && hostOf(d.url) === hostOf(website)) return true;
+    } catch {}
+  }
+  let path = d.url;
+  try {
+    path = decodeURIComponent(new URL(d.url).pathname);
+  } catch {}
+  return ABOUT_FIRE.test(`${path.replace(/[/_.-]+/g, " ")} ${d.title}`);
 }
 
 const SHINGLE = 8;
