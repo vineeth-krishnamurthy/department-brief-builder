@@ -23,7 +23,7 @@ export type Source = {
   html?: boolean; // documents that can take a text-fragment link
 };
 
-export type RawFact = { text: string; source_id: string; quote?: string; source_url?: string };
+export type RawFact = { text: string; source_id: string; quote?: string; source_url?: string; date?: string };
 export type RawSection = { title: string; facts: RawFact[] };
 export type WebEvidence = { urls: Map<string, string>; texts: Map<string, string> }; // url -> title, url -> fetched text
 
@@ -66,11 +66,14 @@ export function renderSources(sources: Source[], docBudget: number): string[] {
 /**
  * Turn Claude's raw facts into displayable facts. A fact survives only if its evidence states it
  * directly:
- *  - documents (D) and Claude's own search: a quote copied from the fetched text is required, and
- *    every number in the fact must appear in that quote;
+ *  - documents (D) and Claude's own search: a quote is required, and it must appear in some page we
+ *    fetched. If it isn't in the page Claude cited, the fact is cited to the page it is in. Every
+ *    number in the fact must appear in that quote;
  *  - records (R): every number in the fact must appear in the record.
- * Anything else (unknown source, missing or invented quote, a number the evidence doesn't contain)
- * is dropped, with the reason counted.
+ * The citation carries a date whenever one is found: the date Claude read for the fact, if that
+ * page shows it, otherwise the date the fetcher recorded for the source.
+ * Anything else (unknown source, missing quote, a quote in no fetched page, a number the evidence
+ * doesn't contain) is dropped, with the reason counted.
  */
 export type DropCounts = { unknownSource: number; noQuote: number; quoteNotInSource: number; numberNotInEvidence: number };
 
@@ -78,6 +81,13 @@ export type DroppedFact = { text: string; source_id: string; quote?: string; rea
 
 export function resolveFacts(sections: RawSection[], sources: Source[], web: WebEvidence): { sections: Section[]; dropped: DropCounts; droppedFacts: DroppedFact[] } {
   const byId = new Map(sources.map((s) => [s.id, s]));
+  // Every page we fetched, crawled or from Claude's own search, can back a quote.
+  const pages: Source[] = [
+    ...sources.filter((s) => s.kind === "document"),
+    ...[...web.texts].map(([url, text]): Source => ({
+      id: "web", kind: "document", url, text, title: web.urls.get(url) || safeHost(url), type: "Web search", html: true,
+    })),
+  ];
   const dropped: DropCounts = { unknownSource: 0, noQuote: 0, quoteNotInSource: 0, numberNotInEvidence: 0 };
   const droppedFacts: DroppedFact[] = [];
   let current: RawFact | null = null;
@@ -87,47 +97,27 @@ export function resolveFacts(sections: RawSection[], sources: Source[], web: Web
     facts: sec.facts.flatMap((f): Fact[] => {
       current = f;
       const quote = f.quote?.trim() ?? "";
-      const src = byId.get(f.source_id.trim().toUpperCase());
+      const isWeb = f.source_id.trim().toLowerCase() === "web";
+      const cited = isWeb ? pages.find((p) => p.id === "web" && p.url === f.source_url) : byId.get(f.source_id.trim().toUpperCase());
+      if (!cited && !isWeb) return drop("unknownSource");
 
-      if (src) {
-        const fact: Fact = { text: f.text, source_url: src.url, source_title: src.title, source_type: src.type, date: src.date, date_label: src.date_label };
-        if (src.kind === "document") {
-          if (!quote) return drop("noQuote");
-          if (!verified(quote, src.text)) return drop("quoteNotInSource");
-          const also = `${src.title} ${src.type}`;
-          let q = widenToNumbers(fact.text, quote, src.text, also);
-          if (!q) q = widenToNumbers((fact.text = withoutUnquotedDates(f.text, `${quote} ${also}`)), quote, src.text, also);
-          if (!q) return drop("numberNotInEvidence");
-          fact.quote = q;
-          if (src.html) fact.link = withTextFragment(src.url, q);
-          return [fact];
-        }
+      if (cited?.kind === "record") {
         // The source's own name counts too, so "Form 990" or "FY2024" isn't read as an unsupported number.
-        if (!numbersIn(f.text, `${src.text} ${src.title} ${src.type} ${src.date ?? ""}`)) return drop("numberNotInEvidence");
-        if (src.quote) {
-          fact.quote = src.quote;
-          fact.link = withTextFragment(src.url, src.quote);
-        }
-        return [fact];
-      }
-
-      // Claude's single fallback search: the URL must be one its search returned, and the quote
-      // must come from a page it fetched (a search snippet alone isn't enough).
-      if (f.source_id.toLowerCase() === "web" && f.source_url && web.urls.has(f.source_url)) {
-        const page = web.texts.get(f.source_url);
-        if (!quote) return drop("noQuote");
-        if (!page || !verified(quote, page)) return drop("quoteNotInSource");
-        let text = f.text;
-        let q = widenToNumbers(text, quote, page, "");
-        if (!q) q = widenToNumbers((text = withoutUnquotedDates(f.text, quote)), quote, page, "");
-        if (!q) return drop("numberNotInEvidence");
+        if (!numbersIn(f.text, `${cited.text} ${cited.title} ${cited.type} ${cited.date ?? ""}`)) return drop("numberNotInEvidence");
         return [{
-          text, source_url: f.source_url, source_title: web.urls.get(f.source_url) || safeHost(f.source_url),
-          source_type: "Web search", quote: q, link: withTextFragment(f.source_url, q),
+          ...citation(cited), text: f.text,
+          ...(cited.quote && { quote: cited.quote, link: withTextFragment(cited.url, cited.quote) }),
         }];
       }
 
-      return drop("unknownSource");
+      if (!quote) return drop("noQuote");
+      const page = cited && verified(quote, cited.text) ? cited : pages.find((p) => verified(quote, p.text));
+      if (!page) return drop("quoteNotInSource");
+      const cite = citation(page, f.date);
+      // A date the page shows may also appear in the fact text.
+      const q = widenToNumbers(f.text, quote, page.text, `${page.title} ${page.type} ${cite.date ?? ""}`);
+      if (!q) return drop("numberNotInEvidence");
+      return [{ ...cite, text: f.text, quote: q, ...(page.html && { link: withTextFragment(page.url, q) }) }];
     }),
   }));
   return { sections: resolved.filter((s) => s.facts.length > 0), dropped, droppedFacts };
@@ -137,6 +127,19 @@ export function resolveFacts(sections: RawSection[], sources: Source[], web: Web
     if (current) droppedFacts.push({ text: current.text, source_id: current.source_id, quote: current.quote, reason });
     return [];
   }
+}
+
+/**
+ * Link, title, type, and date for a fact cited to this source. Records keep their own date; for a
+ * page, the date Claude read for the fact wins if the page shows it.
+ */
+function citation(src: Source, factDate?: string): Omit<Fact, "text"> {
+  const d = factDate?.trim();
+  const shown = d && src.kind === "document" && norm(`${src.title} ${src.text}`).includes(norm(d));
+  return {
+    source_url: src.url, source_title: src.title, source_type: src.type,
+    ...(shown ? { date: d } : { date: src.date, date_label: src.date_label }),
+  };
 }
 
 /**
@@ -157,22 +160,6 @@ export function widenToNumbers(fact: string, quote: string, text: string, alsoCo
     if (numbersIn(fact, `${span} ${alsoCounts}`)) return span;
   }
   return null;
-}
-
-/**
- * Claude often stamps a fact with a date from elsewhere on the page, such as the meeting date in a
- * page heading ("Town Meeting on March 4, 2025 voted $87,070..."), so the quote can't support it.
- * Remove a full date ("March 4, 2025", with a leading "on" or "as of") whose numbers the evidence lacks; the
- * rest of the fact must still pass the number check.
- */
-const MONTH_DATE = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\\.?\\s+\\d{1,2},?\\s+\\d{4}";
-export function withoutUnquotedDates(fact: string, evidence: string): string {
-  const out = fact
-    .replace(new RegExp(`\\s*\\b(?:on|as of|dated|in|from|through)\\s+(${MONTH_DATE}),?|\\b(${MONTH_DATE}),?\\s*`, "gi"), (all, a, b) => (numbersIn(a ?? b, evidence) ? all : a ? "" : " "))
-    .replace(/\s+/g, " ")
-    .replace(/\s+([,.;])/g, "$1")
-    .trim();
-  return out.charAt(0).toUpperCase() + out.slice(1);
 }
 
 /** Numbers as written ("$67,727", "2025-09-27", "18%") broken into comparable digit runs. */

@@ -25,6 +25,7 @@ const Output = z.object({
           source_id: z.string(),
           quote: z.string().optional(),
           source_url: z.string().optional(),
+          date: z.string().optional(),
         }),
       ),
     }),
