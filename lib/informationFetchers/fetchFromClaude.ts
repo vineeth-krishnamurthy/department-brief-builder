@@ -10,7 +10,7 @@ const EXPECTED_CHARS = 6000; // rough size of a finished brief, for the progress
 let client: Anthropic | null = null;
 function anthropic() {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set, so the brief can't be written.");
-  return (client ??= new Anthropic({ timeout: 45_000, maxRetries: 1 }));
+  return (client ??= new Anthropic({ timeout: 55_000, maxRetries: 1 }));
 }
 
 export type ClaudeProgress = (fraction: number, detail: string) => void;
@@ -35,22 +35,29 @@ const Output = z.object({
 export type ClaudeOutput = { sections: RawSection[]; why_call_today: string; web: WebEvidence };
 
 /**
- * One Claude call. It reads the raw material gathered by the fetchers; web search and fetch
- * are capped at one use each and the prompt tells it to search only for a required gap.
+ * One Claude call. It reads the raw material gathered by the fetchers. When a required item is
+ * still missing, it also gets web search and fetch (capped by SEARCH_BUDGET) to fill those gaps.
  * The prompts are built in lib/buildFireDeptBrief.ts; this file only talks to the API,
  * validates the JSON, and records which URLs Claude's own search and fetch actually returned
  * so citations to them can be checked.
  */
-export async function fetchFromClaude(system: string, user: string, onProgress?: ClaudeProgress): Promise<ClaudeOutput> {
+export const SEARCH_BUDGET = { searches: 3, fetches: 3 };
+
+export async function fetchFromClaude(system: string, user: string, allowSearch: boolean, onProgress?: ClaudeProgress): Promise<ClaudeOutput> {
   const params: Anthropic.MessageCreateParamsNonStreaming = {
     model: MODEL,
     max_tokens: 6000,
     system,
     output_config: { effort: "low" },
-    tools: [
-      { type: "web_search_20260209", name: "web_search", max_uses: 1, blocked_domains: known.blocked },
-      { type: "web_fetch_20260209", name: "web_fetch", max_uses: 1, max_content_tokens: 6000 },
-    ],
+    // Search only when a required item is still missing after everything we gathered.
+    ...(allowSearch && {
+      tools: [
+        // The basic tool versions: the newer ones filter results inside a code sandbox, which
+        // measured roughly twice as slow here and broke the 30-second budget.
+        { type: "web_search_20250305" as const, name: "web_search" as const, max_uses: SEARCH_BUDGET.searches, blocked_domains: known.blocked },
+        { type: "web_fetch_20250910" as const, name: "web_fetch" as const, max_uses: SEARCH_BUDGET.fetches, max_content_tokens: 6000 },
+      ],
+    }),
     messages: [{ role: "user", content: user }],
   };
 

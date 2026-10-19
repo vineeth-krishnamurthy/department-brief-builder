@@ -20,7 +20,7 @@ export type Doc = {
 const SOCIAL = /^https?:\/\/(?:www\.|m\.)?(facebook|instagram|twitter|x|youtube)\.com\//i;
 
 export type CrawlOptions = {
-  starts: string[];
+  starts: (string | { url: string; depth: number })[]; // a start can begin deeper to limit how far it is followed
   keywords: RegExp; // links are followed when URL or link text match
   deadlineMs?: number; // total wall-clock budget (default 8000)
   maxDocs?: number; // default 20
@@ -41,11 +41,12 @@ export async function crawl(opts: CrawlOptions): Promise<Doc[]> {
   const maxDocs = opts.maxDocs ?? 20, maxPdfs = opts.maxPdfs ?? 4, maxDepth = opts.maxDepth ?? 2;
   const maxChars = opts.maxCharsPerDoc ?? 8000, maxPdfBytes = opts.maxPdfBytes ?? 4 * 1024 * 1024;
 
-  const sites = new Set(opts.starts.map((s) => safeHost(s)).filter(Boolean));
+  const starts = opts.starts.map((s) => (typeof s === "string" ? { url: s, depth: 0 } : s));
+  const sites = new Set(starts.map((s) => safeHost(s.url)).filter(Boolean));
   const seen = new Set<string>();
   const docs: Doc[] = [];
   let pdfs = 0;
-  let frontier = opts.starts.map((url) => ({ url, depth: 0 }));
+  let frontier = starts;
 
   while (frontier.length && docs.length < maxDocs && Date.now() < deadline) {
     const batch = frontier.filter((f) => !seen.has(norm(f.url))).slice(0, 8);

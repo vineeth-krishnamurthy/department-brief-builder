@@ -11,7 +11,7 @@ import { acquireSlot, BusyError } from "@/lib/utils/rateLimiter";
 import { Progress } from "@/lib/utils/progress";
 import type { Brief, BriefEvent } from "@/lib/utils/dataTypes";
 
-export const maxDuration = 60;
+export const maxDuration = 90; // target is under 60s per brief; headroom so a slow run finishes instead of being cut off
 
 /**
  * Streams newline-delimited JSON events so the page can show live progress:

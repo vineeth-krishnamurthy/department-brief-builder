@@ -13,12 +13,11 @@ import type { Evidence } from "../gatherEvidence";
 export function evidenceHash(e: Evidence): string {
   const docs = [...e.pages, ...(e.meetings ?? [])];
   const canonical = {
-    v: 1, // bump when the hashing rules change, so old versions aren't wrongly matched
+    v: 2, // bump when the hashing rules change, so old versions aren't wrongly matched
     place: [e.place.name, e.place.address, e.place.phone, e.place.website],
     registry: e.registry,
     grants: e.grants === null ? "failed" : e.grants.map((f) => f.text).sort(),
     nonprofit: e.nonprofit === null ? "failed" : e.nonprofit.map((f) => f.text).sort(),
-    news: e.news === null ? "failed" : e.news.map((h) => `${h.date}|${h.publisher}|${h.title}`).sort(),
     surplus: e.surplus === null ? "failed" : e.surplus.map((f) => f.source_url).sort(),
     meetings: e.meetings === null ? "none" : "found",
     docs: docFingerprints(docs),

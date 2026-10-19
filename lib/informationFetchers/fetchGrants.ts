@@ -20,7 +20,16 @@ export async function grantFacts(place: Place): Promise<Fact[] | null> {
   if (!place.state) return null;
   const want = new Set([...words(place.name), ...words(place.city)]);
   if (want.size === 0) return [];
-  const matches = (recipient: string) => words(recipient).some((w) => want.has(w));
+  // A recipient counts only if it shares a distinctive word with the department or town AND looks
+  // like a fire organization or that town's own government ("ITHACA, CITY OF", "Town of Washington").
+  // This rejects look-alikes such as "Washington Cty-Montpelier Hall".
+  const town = place.city.toLowerCase().replace(/[^a-z ]/g, "").trim();
+  const FIRE_ORG = /\b(fire|rescue|ems|ambulance|hose|hook|firefighters?|emergency services)\b/i;
+  const townGov = (r: string) => {
+    const n = r.toLowerCase().replace(/[^a-z, ]/g, " ").replace(/\s+/g, " ");
+    return !!town && new RegExp(`\\b(city|town|village|borough|township) of ${town}\\b|\\b${town},? (city|town|village|borough|township) of\\b`).test(n);
+  };
+  const matches = (recipient: string) => words(recipient).some((w) => want.has(w)) && (FIRE_ORG.test(recipient) || townGov(recipient));
 
   const [fema, usa] = await Promise.all([fromFema(place, matches), fromUsaspending(place, matches)]);
   if (fema === null && usa === null) return null;
