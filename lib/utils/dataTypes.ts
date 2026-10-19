@@ -5,6 +5,7 @@ export type Place = {
   name: string;
   address: string;
   city: string;
+  county?: string; // "Gwinnett County"; older stored briefs lack it
   state: string;
   zip: string;
   phone: string;

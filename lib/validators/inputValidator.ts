@@ -69,13 +69,27 @@ const STOP = new Set(["fire", "department", "dept", "district", "company", "co",
 const tokens = (s: string) =>
   new Set(s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((t) => t && !STOP.has(t)));
 
-/** Match a Google place to a registry row: phone first, then name + city/zip in the same state. */
+/**
+ * Match a Google place to a registry row, strongest signal first:
+ *  1. the same phone number;
+ *  2. the same website domain, if no other department in the state uses it (a county station's
+ *     page on gwinnettcounty.com matches the county department listed under Lawrenceville);
+ *  3. name + city/zip in the same state;
+ *  4. a county-run station: the place is in "Gwinnett County", its name says "Gwinnett County",
+ *     and exactly one registry department in the state is named for that county.
+ */
 export function findRegistryEntry(place: Place): RegistryEntry | null {
   const all = load();
   const phone = digits(place.phone);
   if (phone.length === 10) {
     const hit = all.find((r) => digits(r.phone) === phone);
     if (hit) return hit;
+  }
+
+  const host = hostOf(place.website);
+  if (host) {
+    const hits = all.filter((r) => r.state === place.state && hostOf(r.website) === host);
+    if (hits.length === 1) return hits[0];
   }
 
   const want = tokens(place.name);
@@ -96,7 +110,23 @@ export function findRegistryEntry(place: Place): RegistryEntry | null {
     }
   }
   // A city-only name like "Ithaca Fire Department" has one real token; require it to match.
-  return bestScore >= 0.5 ? best : null;
+  if (bestScore >= 0.5) return best;
+
+  const county = place.county?.toLowerCase();
+  if (county?.endsWith(" county") && place.name.toLowerCase().includes(county)) {
+    const hits = all.filter((r) => r.state === place.state && r.name.toLowerCase().startsWith(county));
+    if (hits.length === 1) return hits[0];
+  }
+  return null;
+}
+
+function hostOf(url: string): string {
+  if (!url) return "";
+  try {
+    return new URL(/^https?:\/\//i.test(url) ? url : `http://${url}`).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return "";
+  }
 }
 
 export function registryFacts(r: RegistryEntry): Fact[] {
@@ -135,6 +165,9 @@ export function validateFireDepartment(place: Place, registry: RegistryEntry | n
     const kind = place.types.find((t) => t !== "point_of_interest" && t !== "establishment") ?? "place";
     return `"${place.name}" is listed by Google as a ${kind.replace(/_/g, " ")}, not a fire department, and does not appear in the USFA fire department registry.`;
   }
+
+  // Google's own government tag on a fire station is enough; many counties and cities use .com sites.
+  if (place.types.includes("fire_station") && place.types.includes("government_office")) return null;
 
   if (place.website) {
     const host = new URL(place.website).hostname.toLowerCase();

@@ -41,6 +41,7 @@ export async function getPlace(placeId: string): Promise<Place> {
     name: p.displayName?.text ?? "",
     address: p.formattedAddress ?? "",
     city: comp("locality") || comp("sublocality") || comp("administrative_area_level_3"),
+    county: comp("administrative_area_level_2"),
     state: comp("administrative_area_level_1", true),
     zip: comp("postal_code"),
     phone: p.nationalPhoneNumber ?? "",
