@@ -1,67 +1,41 @@
+import { crawl, bareHost, type Doc } from "../utils/crawler";
+
 /**
- * The department's own website: homepage plus any linked pages that look like
- * apparatus, leadership, budget, or news. Returned as plain text for Claude to read.
+ * Crawl the department's website, and the parent city or county site when the
+ * department lives under it, following links about leadership, fleet, money, and governance.
+ * Returns documents (HTML pages and PDFs) as plain text for Claude to read.
  */
-export type Page = { url: string; title: string; text: string };
+export type Page = Doc;
 
-const INTERESTING = /apparatus|fleet|equipment|vehicle|engine|truck|chief|staff|leadership|personnel|administration|about|budget|news|press|announce|grant/i;
-const MAX_PAGES = 5;
-const MAX_CHARS = 6000;
+export const SITE_KEYWORDS =
+  /apparatus|fleet|equipment|vehicle|engine|truck|ladder|chief|officer|staff|leadership|personnel|administration|about|history|budget|finance|financ|capital|annual[- ]?report|grant|fund|news|press|announce|agenda|minutes|board|commission|council|trustee|meeting|transparency|public[- ]?records|document|report|plan/i;
 
-export async function fetchDeptPages(website: string): Promise<Page[]> {
+export async function fetchDeptPages(website: string, onDoc?: (count: number) => void): Promise<Page[]> {
   if (!website) return [];
-  const home = await fetchPage(website);
-  if (!home) return [];
+  const starts = [website];
 
-  // Resolve links against where the homepage actually landed after redirects.
-  const base = new URL(home.url);
-  const site = bareHost(base.hostname);
-  const links = new Set<string>();
-  for (const m of home.html.matchAll(/<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
-    const [, href, label] = m;
-    if (!INTERESTING.test(href) && !INTERESTING.test(strip(label))) continue;
-    try {
-      const u = new URL(href, base);
-      if (bareHost(u.hostname) === site && !/\.(pdf|jpg|png|gif|zip)$/i.test(u.pathname)) links.add(u.href);
-    } catch {}
-    if (links.size >= MAX_PAGES) break;
-  }
-
-  const subs = await Promise.all([...links].map(fetchPage));
-  return [home, ...subs].filter((p): p is NonNullable<typeof p> => !!p).map(({ url, title, html }) => ({
-    url,
-    title,
-    text: strip(html).slice(0, MAX_CHARS),
-  }));
-}
-
-async function fetchPage(url: string) {
+  // A department page under a city or county domain (e.g. /Agencies/fire/) means the
+  // parent government's site holds the budget, agendas, and minutes. Crawl it too.
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; GarageBriefBot/1.0)" },
-      signal: AbortSignal.timeout(6000),
-      redirect: "follow",
-    });
-    if (!res.ok || !(res.headers.get("content-type") ?? "").includes("html")) return null;
-    const html = await res.text();
-    const title = strip(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") || url;
-    return { url: res.url || url, title, html };
+    const u = new URL(website);
+    if (u.pathname.replace(/\/$/, "").length > 1 && !/^(fire|fd)\./i.test(u.hostname)) starts.push(`${u.protocol}//${u.host}/`);
   } catch {
-    return null;
+    return [];
   }
+
+  const docs = await crawl({ starts, keywords: SITE_KEYWORDS, deadlineMs: 9000, maxDocs: 24, maxPdfs: 4, maxDepth: 2, onDoc });
+
+  // Keep the department's own pages first, then the parent site's most relevant documents.
+  const deptHost = bareHost(new URL(website).hostname);
+  const score = (d: Doc) => (bareHost(new URL(d.url).hostname) === deptHost ? 100 : 0) + relevance(d) - d.depth;
+  return docs
+    .filter((d) => d.text.length > 200)
+    .sort((a, b) => score(b) - score(a))
+    .slice(0, 18);
 }
 
-function strip(html: string): string {
-  return html
-    .replace(/<(script|style|nav|footer|svg)[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;|&#160;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/\s+/g, " ")
-    .trim();
+/** How many fire-service and money words a document contains, capped so one page can't dominate. */
+function relevance(d: Doc) {
+  const hits = d.text.match(/\b(fire|apparatus|engine|ladder|pumper|chief|budget|grant|capital|purchase|replacement|bid|award)\b/gi)?.length ?? 0;
+  return Math.min(50, hits);
 }
-
-/** www.example.org and example.org are the same site. */
-const bareHost = (h: string) => h.toLowerCase().replace(/^www\./, "");

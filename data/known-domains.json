@@ -1,8 +1,25 @@
 {
-  "_comment": "Seed list of domains that reliably carry fire-department facts. Learned domains from lib/cache.ts are appended at runtime.",
-  "surplus_sales": ["govdeals.com", "municibid.com", "publicsurplus.com"],
-  "apparatus_news": ["firehouse.com", "firerescue1.com", "fireapparatusmagazine.com", "firefighternation.com"],
-  "grants": ["usaspending.gov", "fema.gov"],
-  "council_records": ["legistar.com", "granicus.com", "civicplus.com", "municode.com"],
-  "blocked": ["facebook.com", "yelp.com", "mapquest.com", "yellowpages.com", "pinterest.com", "instagram.com", "tiktok.com"]
+  "_comment": "Steers Claude's single fallback web search only. The fetchers query their sources directly (see README). Social sites are not blocked: a search snippet can surface a public post even though the page itself needs a login.",
+  "surplus_sales": [
+    "govdeals.com",
+    "municibid.com",
+    "publicsurplus.com"
+  ],
+  "apparatus_news": [
+    "fireapparatusmagazine.com",
+    "firehouse.com",
+    "firerescue1.com",
+    "firefighternation.com"
+  ],
+  "council_records": [
+    "legistar.com",
+    "civicplus.com"
+  ],
+  "blocked": [
+    "yelp.com",
+    "mapquest.com",
+    "yellowpages.com",
+    "pinterest.com",
+    "tiktok.com"
+  ]
 }

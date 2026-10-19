@@ -1,3 +1,5 @@
+import type { ProgressEvent } from "./progress";
+
 export type Place = {
   id: string;
   name: string;
@@ -32,11 +34,17 @@ export type Fact = {
   text: string;
   source_url: string;
   source_title: string;
+  source_type?: string; // e.g. "Federal grant record", "Department website", "News"
+  quote?: string; // verbatim evidence, verified against the fetched text
+  date?: string; // only when the source itself states it
+  date_label?: string; // what the date means: "Published", "Award start", "Tax year", "Meeting", ...
+  link?: string; // source_url with a text fragment that highlights the quote, when possible
 };
 
 export type Section = {
   title: string;
   facts: Fact[];
+  not_found?: string; // set on a required section that came back empty: what was checked
 };
 
 export type Brief = {
@@ -47,11 +55,25 @@ export type Brief = {
   why_call_today: string;
   elapsed_ms: number;
   generated_at: string;
-  cached?: boolean; // true when served from the brief cache rather than researched now
+  social?: { network: string; url: string }[]; // department pages the AE can open (not crawled)
+  storage?: BriefStorage; // set on the way out; not part of the stored brief
 };
+
+export type BriefStorage =
+  | { status: "new"; version: number; saved_at: string }
+  | { status: "unchanged"; version: number; saved_at: string }
+  | { status: "not_saved"; reason: string };
 
 export type Rejection = {
   rejected: true;
   reason: string;
   place?: Place;
 };
+
+/** Events streamed by the brief route (newline-delimited JSON). */
+export type BriefEvent =
+  | ProgressEvent
+  | { type: "result"; brief: Brief }
+  | { type: "unchanged"; message: string; brief: Brief }
+  | { type: "rejected"; reason: string; place: Place }
+  | { type: "error"; message: string };

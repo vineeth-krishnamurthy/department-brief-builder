@@ -1,57 +1,97 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import type { Brief, Rejection } from "@/lib/utils/dataTypes";
+import type { Brief, BriefEvent, Place } from "@/lib/utils/dataTypes";
+import type { Step } from "@/lib/utils/progress";
+import { BriefView } from "./components/BriefView";
+import { ProgressPanel } from "./components/ProgressPanel";
+
+type Outcome =
+  | { kind: "brief"; brief: Brief }
+  | { kind: "unchanged"; message: string; brief: Brief }
+  | { kind: "rejected"; reason: string; place: Place }
+  | { kind: "error"; message: string; busy?: boolean };
 
 export default function Home() {
   const [placeId, setPlaceId] = useState("");
   const [loading, setLoading] = useState(false);
-  const [brief, setBrief] = useState<Brief | null>(null);
-  const [rejection, setRejection] = useState<Rejection | null>(null);
-  const [error, setError] = useState<{ message: string; busy: boolean } | null>(null);
+  const [progress, setProgress] = useState<{ pct: number; steps: Step[] } | null>(null);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [lastId, setLastId] = useState("");
 
-  async function run(id = placeId, refresh = false) {
+  async function run(id = placeId) {
     setLoading(true);
-    setBrief(null);
-    setRejection(null);
-    setError(null);
+    setOutcome(null);
+    setProgress({ pct: 0, steps: [] });
     setLastId(id);
     try {
       const res = await fetch("/api/brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ placeId: id, refresh }),
+        body: JSON.stringify({ placeId: id.trim() }),
       });
-      const data = await res.json();
-      if (res.status === 422) setRejection(data);
-      else if (!res.ok) setError({ message: data.error ?? "Something went wrong", busy: res.status === 429 });
-      else setBrief(data);
+      // Bad input and a full service come back as plain JSON before any streaming.
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        setOutcome({ kind: "error", message: data.error ?? `Request failed (${res.status})`, busy: res.status === 429 });
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finished = false;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (!line) continue;
+          const e = JSON.parse(line) as BriefEvent;
+          if (e.type === "progress") setProgress({ pct: e.pct, steps: e.steps });
+          else {
+            finished = true;
+            if (e.type === "result") setOutcome({ kind: "brief", brief: e.brief });
+            else if (e.type === "unchanged") setOutcome({ kind: "unchanged", message: e.message, brief: e.brief });
+            else if (e.type === "rejected") setOutcome({ kind: "rejected", reason: e.reason, place: e.place });
+            else setOutcome({ kind: "error", message: e.message });
+          }
+        }
+      }
+      if (!finished) setOutcome({ kind: "error", message: "The connection closed before the brief finished. Please try again." });
     } catch (e) {
-      setError({ message: (e as Error).message, busy: false });
+      setOutcome({ kind: "error", message: (e as Error).message });
     } finally {
       setLoading(false);
     }
   }
 
+  const storage = outcome?.kind === "brief" ? outcome.brief.storage : undefined;
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Fire Department Pre-Call Brief</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Paste a Google Place ID. Every fact links to where it came from.
-        </p>
+      <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Fire Department Pre-Call Brief</h1>
+          <p className="mt-1 text-sm text-neutral-500">Paste a Google Place ID. Every fact links to where it came from.</p>
+        </div>
+        <Link
+          href="/briefs"
+          className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+        >
+          View stored briefs
+        </Link>
       </header>
 
-      <form
-        onSubmit={(e) => { e.preventDefault(); run(); }}
-        className="flex gap-2"
-      >
+      <form onSubmit={(e) => { e.preventDefault(); run(); }} className="flex gap-2">
         <input
           value={placeId}
           onChange={(e) => setPlaceId(e.target.value)}
           placeholder="ChIJ..."
-          className="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-900"
+          className="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-900"
         />
         <button
           type="submit"
@@ -62,20 +102,12 @@ export default function Home() {
         </button>
       </form>
 
-      {loading && (
-        <p className="mt-8 animate-pulse text-sm text-neutral-500">
-          Looking up the place, checking the USFA registry and federal grants, reading the department site, then filling gaps…
-        </p>
-      )}
+      {loading && progress && <ProgressPanel pct={progress.pct} steps={progress.steps} />}
 
-      {error && (
-        <div
-          className={`mt-8 rounded-md border p-4 text-sm ${
-            error.busy ? "border-sky-300 bg-sky-50 text-sky-900" : "border-red-300 bg-red-50 text-red-800"
-          }`}
-        >
-          <p>{error.message}</p>
-          {error.busy && (
+      {outcome?.kind === "error" && (
+        <div className={`mt-6 rounded-md border p-4 text-sm ${outcome.busy ? "border-sky-300 bg-sky-50 text-sky-900" : "border-red-300 bg-red-50 text-red-800"}`}>
+          <p>{outcome.message}</p>
+          {outcome.busy && (
             <button onClick={() => run(lastId)} className="mt-2 rounded-md border border-sky-400 px-3 py-1 text-xs font-medium">
               Try again
             </button>
@@ -83,98 +115,41 @@ export default function Home() {
         </div>
       )}
 
-      {rejection && (
-        <div className="mt-8 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+      {outcome?.kind === "rejected" && (
+        <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-medium">Not a government fire agency</p>
-          <p className="mt-1">{rejection.reason}</p>
-          {rejection.place && <p className="mt-2 text-xs text-amber-700">{rejection.place.name} · {rejection.place.address}</p>}
+          <p className="mt-1">{outcome.reason}</p>
+          <p className="mt-2 text-xs text-amber-700">{outcome.place.name} · {outcome.place.address}</p>
         </div>
       )}
 
-      {brief && (
+      {outcome?.kind === "unchanged" && (
         <>
-          {brief.cached && (
-            <div className="mt-8 flex items-center justify-between rounded-md border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-              <span>Cached brief from {age(brief.generated_at)}. Research is not live.</span>
-              <button onClick={() => run(brief.place.id, true)} className="rounded-md border border-neutral-400 px-3 py-1 font-medium">
-                Refresh now
-              </button>
-            </div>
+          <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-medium">No new information, so no new brief was created</p>
+            <p className="mt-1">{outcome.message}</p>
+            <Link href={`/briefs/${encodeURIComponent(outcome.brief.place.id)}`} className="mt-2 inline-block text-xs font-medium underline">
+              See every version for this department
+            </Link>
+          </div>
+          <BriefView brief={outcome.brief} />
+        </>
+      )}
+
+      {outcome?.kind === "brief" && (
+        <>
+          {storage?.status === "new" && (
+            <p className="mt-6 text-xs text-neutral-500">
+              Saved as version {storage.version}.{" "}
+              <Link href={`/briefs/${encodeURIComponent(outcome.brief.place.id)}`} className="underline">
+                See every version
+              </Link>
+            </p>
           )}
-          <BriefView brief={brief} />
+          {storage?.status === "not_saved" && <p className="mt-6 text-xs text-amber-700">Not saved: {storage.reason}</p>}
+          <BriefView brief={outcome.brief} />
         </>
       )}
     </main>
   );
-}
-
-function BriefView({ brief }: { brief: Brief }) {
-  const { place, registry } = brief;
-  return (
-    <article className="mt-8">
-      <div className="border-b border-neutral-200 pb-4 dark:border-neutral-800">
-        <h2 className="text-xl font-semibold">{place.name}</h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">{place.address}</p>
-        <p className="mt-1 text-sm">
-          {place.phone && <span className="mr-4">{place.phone}</span>}
-          {place.website && (
-            <a href={place.website} target="_blank" rel="noreferrer" className="underline">
-              {new URL(place.website).hostname}
-            </a>
-          )}
-        </p>
-        {registry && (
-          <p className="mt-2 text-xs text-neutral-500">
-            USFA registry: {registry.dept_type}, {registry.stations} station{registry.stations === "1" ? "" : "s"},{" "}
-            {registry.career} career / {registry.volunteer} volunteer (snapshot {brief.registry_date})
-          </p>
-        )}
-      </div>
-
-      <div className="mt-4 rounded-md bg-neutral-100 p-4 text-sm dark:bg-neutral-900">
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Why call today</p>
-        <p>{brief.why_call_today}</p>
-      </div>
-
-      {brief.sections.map((s) => (
-        <section key={s.title} className="mt-6">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{s.title}</h3>
-          <ul className="space-y-2 text-sm">
-            {s.facts.map((f, i) => (
-              <li key={i} className="flex gap-2">
-                <span className="text-neutral-400">•</span>
-                <span>
-                  {f.text}{" "}
-                  <a
-                    href={f.source_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={f.source_url}
-                    className="whitespace-nowrap text-xs text-blue-700 underline dark:text-blue-400"
-                  >
-                    {f.source_title || hostOf(f.source_url)}
-                  </a>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-
-      <p className="mt-8 text-xs text-neutral-400">
-        Generated {new Date(brief.generated_at).toLocaleString()} in {(brief.elapsed_ms / 1000).toFixed(1)}s
-      </p>
-    </article>
-  );
-}
-
-function age(iso: string) {
-  const mins = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 60) return `${mins} min ago`;
-  const hours = Math.round(mins / 60);
-  return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
-}
-
-function hostOf(url: string) {
-  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }

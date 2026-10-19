@@ -98,6 +98,7 @@ export function findRegistryEntry(place: Place): RegistryEntry | null {
 export function registryFacts(r: RegistryEntry): Fact[] {
   const url = "https://apps.usfa.fema.gov/registry/";
   const title = "USFA National Fire Department Registry";
+  const meta = { source_url: url, source_title: title, source_type: "USFA registry", date: registryDate(), date_label: "Registry snapshot" };
   const staff = [
     r.career !== "0" && `${r.career} career`,
     r.volunteer !== "0" && `${r.volunteer} volunteer`,
@@ -106,8 +107,8 @@ export function registryFacts(r: RegistryEntry): Fact[] {
     .filter(Boolean)
     .join(", ");
   return [
-    { text: `${r.dept_type} department, ${r.org_type.toLowerCase()} government organization (FDID ${r.fdid}).`, source_url: url, source_title: title },
-    { text: `${r.stations} station${r.stations === "1" ? "" : "s"}; active firefighters: ${staff || "not reported"}.`, source_url: url, source_title: title },
+    { text: `${r.dept_type} department, ${r.org_type.toLowerCase()} government organization (FDID ${r.fdid}).`, ...meta },
+    { text: `${r.stations} station${r.stations === "1" ? "" : "s"}; active firefighters: ${staff || "not reported"}.`, ...meta },
   ];
 }
 

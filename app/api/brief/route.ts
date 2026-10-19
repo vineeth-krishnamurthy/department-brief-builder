@@ -1,19 +1,30 @@
 import { NextResponse } from "next/server";
 import { getPlace } from "@/lib/informationFetchers/fetchGooglePlaceId";
-import { validateFireDepartment, findRegistryEntry, registryFacts, registryDate } from "@/lib/validators/fireDepartmentValidator";
-import { grantFacts } from "@/lib/informationFetchers/fetchGrants";
-import { fetchDeptPages } from "@/lib/informationFetchers/fetchDeptWebsites";
-import { getBrief, putBrief, recall, remember } from "@/lib/utils/cache";
-import { buildFireDeptBrief } from "@/lib/buildFireDeptBrief";
-import { withSlot } from "@/lib/utils/rateLimiter";
+import { validateFireDepartment, findRegistryEntry, registryDate } from "@/lib/validators/fireDepartmentValidator";
 import { validatePlaceId } from "@/lib/validators/inputValidator";
-import type { Brief, Rejection } from "@/lib/utils/dataTypes";
+import { gatherEvidence } from "@/lib/gatherEvidence";
+import { buildFireDeptBrief } from "@/lib/buildFireDeptBrief";
+import { MODEL } from "@/lib/informationFetchers/fetchFromClaude";
+import { evidenceHash } from "@/lib/utils/evidenceHash";
+import { latestVersion, saveVersion, storeConfigured, touchDepartment, type StoredVersion } from "@/lib/utils/briefStore";
+import { acquireSlot, BusyError } from "@/lib/utils/rateLimiter";
+import { Progress } from "@/lib/utils/progress";
+import type { Brief, BriefEvent } from "@/lib/utils/dataTypes";
 
 export const maxDuration = 60;
 
+/**
+ * Streams newline-delimited JSON events so the page can show live progress:
+ *   { type: "progress", pct, steps }   many times
+ * then exactly one of:
+ *   { type: "result", brief }                         a new brief, saved as the next version
+ *   { type: "unchanged", message, brief }             same evidence as the latest stored version
+ *   { type: "rejected", reason, place }               not a government fire department
+ *   { type: "error", message }
+ * Bad input (400) and a full service (429) are answered as plain JSON before streaming starts.
+ */
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as { placeId?: unknown; refresh?: unknown };
-
+  const body = (await req.json().catch(() => ({}))) as { placeId?: unknown };
   const placeId = validatePlaceId(body.placeId);
   if (!placeId) {
     return NextResponse.json(
@@ -22,62 +33,114 @@ export async function POST(req: Request) {
     );
   }
 
-  // Serve a recent brief unless the user asked for a fresh run.
-  if (body.refresh !== true) {
-    const cached = await getBrief(placeId).catch(() => null);
-    if (cached) return NextResponse.json({ ...cached, cached: true });
+  let release: () => Promise<void>;
+  try {
+    release = await acquireSlot();
+  } catch (e) {
+    if (e instanceof BusyError) return NextResponse.json({ error: e.message }, { status: 429, headers: { "Retry-After": "5" } });
+    throw e;
   }
 
-  try {
-    const brief = await withSlot(() => research(placeId));
-    if ("rejected" in brief) return NextResponse.json(brief, { status: 422 });
-    await putBrief(brief).catch(() => {});
-    return NextResponse.json(brief);
-  } catch (e) {
-    const status = (e as { status?: number }).status ?? 500;
-    const message = e instanceof Error ? e.message : String(e);
-    if (status === 500) console.error("brief failed:", message);
-    return NextResponse.json(
-      { error: status === 500 ? "Something went wrong while researching this department. Please try again." : message },
-      { status, headers: status === 429 ? { "Retry-After": "5" } : undefined },
-    );
-  }
+  const encoder = new TextEncoder();
+  let open = true;
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (e: BriefEvent) => {
+        if (open) controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
+      };
+      try {
+        send(await research(placeId, new Progress(send)));
+      } catch (e) {
+        const status = (e as { status?: number }).status;
+        const message = e instanceof Error ? e.message : String(e);
+        console.error("brief failed:", message);
+        send({ type: "error", message: status === 404 ? message : `Something went wrong while researching this department: ${message}` });
+      } finally {
+        await release();
+        if (open) controller.close();
+        open = false;
+      }
+    },
+    async cancel() {
+      // The browser went away: stop sending and free the slot (the release is idempotent).
+      open = false;
+      await release();
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" },
+  });
 }
 
-async function research(placeId: string): Promise<Brief | Rejection> {
+async function research(placeId: string, progress: Progress): Promise<BriefEvent> {
   const started = Date.now();
 
   // 1. Resolve the place.
-  const place = await getPlace(placeId);
+  const place = await progress.track("place", getPlace(placeId), (p) => ({ detail: p.name }));
 
   // 2. Gate on the USFA registry, then on Google types and domain.
+  progress.start("gate");
   const registry = findRegistryEntry(place);
   const reason = validateFireDepartment(place, registry);
-  if (reason) return { rejected: true, reason, place };
+  if (reason) {
+    progress.fail("gate", "not a government fire department");
+    progress.skipRemaining("stopped");
+    return { type: "rejected", reason, place };
+  }
+  progress.done("gate", registry ? `USFA registry FDID ${registry.fdid}` : "passed on place type and website");
 
-  // 3. Deterministic sources, in parallel.
-  const website = place.website || registry?.website || "";
-  const [grants, pages, { memory, topDomains }] = await Promise.all([
-    grantFacts(place).catch(() => null),
-    fetchDeptPages(website),
-    recall(place.id).catch(() => ({ memory: null, topDomains: [] })),
-  ]);
-  const knownFacts = [...(registry ? registryFacts(registry) : []), ...(grants ?? [])];
+  // 3. Every deterministic source in parallel.
+  const evidence = await gatherEvidence(place, registry, progress);
 
-  // 4. One Claude call to assemble the brief and fill gaps.
-  const { sections, why_call_today } = await buildFireDeptBrief({
-    place, registry, knownFacts, grants, website, pages, memory, learnedDomains: topDomains,
-  });
+  // 4. Compare with the latest stored version. Same evidence means a new brief would add nothing.
+  const hash = evidenceHash(evidence);
+  let previous: StoredVersion | null = null;
+  if (storeConfigured()) {
+    progress.start("compare");
+    previous = await latestVersion(place.id).catch((e) => {
+      console.error("stored brief lookup failed:", e.message);
+      return null;
+    });
+    if (previous && previous.evidence_hash === hash) {
+      await touchDepartment(place.id).catch(() => {});
+      progress.done("compare", `matches version ${previous.version}`);
+      progress.skipRemaining("not needed: nothing changed");
+      const when = new Date(previous.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      return {
+        type: "unchanged",
+        message: `Nothing new since version ${previous.version} on ${when}. Every source returned the same information, so a new brief wasn't created. Showing the stored version.`,
+        brief: { ...previous.brief, storage: { status: "unchanged", version: previous.version, saved_at: previous.created_at } },
+      };
+    }
+    progress.done("compare", previous ? `changed since version ${previous.version}` : "first brief for this department");
+  } else {
+    progress.skip("compare", "storage not configured");
+  }
 
-  // 5. Remember which searched-for URLs produced facts (registry and grants are already deterministic).
-  const cited = sections
-    .flatMap((s) => s.facts.map((f) => ({ url: f.source_url, section: s.title })))
-    .filter((c) => !/usaspending\.gov|usfa\.fema\.gov/.test(c.url))
-    .filter((c, i, a) => a.findIndex((x) => x.url === c.url) === i);
-  await remember(place.id, cited).catch(() => {});
+  // 5. One Claude call reads all of it and writes the brief.
+  progress.start("claude");
+  const { sections, why_call_today } = await buildFireDeptBrief(evidence, (fraction, detail) => progress.partial("claude", fraction, detail));
+  progress.done("claude", `${sections.reduce((n, s) => n + s.facts.length, 0)} facts`);
 
-  return {
-    place, registry, registry_date: registryDate(), sections, why_call_today,
+  const brief: Brief = {
+    place, registry, registry_date: registryDate(), sections, why_call_today, social: evidence.social,
     elapsed_ms: Date.now() - started, generated_at: new Date().toISOString(),
   };
+
+  // 6. Save as the next version.
+  if (!storeConfigured()) {
+    progress.skip("save", "storage not configured");
+    return { type: "result", brief: { ...brief, storage: { status: "not_saved", reason: "Storage is not configured." } } };
+  }
+  progress.start("save");
+  try {
+    const saved = await saveVersion({ place, registry, hash, brief, previous, model: MODEL });
+    progress.done("save", `version ${saved.version}`);
+    return { type: "result", brief: { ...brief, storage: { status: "new", version: saved.version, saved_at: saved.created_at } } };
+  } catch (e) {
+    console.error("save failed:", (e as Error).message);
+    progress.fail("save", "could not save");
+    return { type: "result", brief: { ...brief, storage: { status: "not_saved", reason: "The brief was created but could not be saved." } } };
+  }
 }
